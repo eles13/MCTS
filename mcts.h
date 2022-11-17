@@ -1,3 +1,8 @@
+#ifdef __APPLE__
+    #include "/usr/local/opt/libomp/include/omp.h"
+#else
+    #include "omp.h"
+#endif
 #include <iostream>
 #include <list>
 #include <vector>
@@ -57,18 +62,25 @@ public:
     }
     double simulation()
     {
-        double score(0), g(1), reward(0);
-        int num_steps(0);
-        while(!env.all_done() && num_steps < cfg.steps_limit)
+        omp_set_num_threads(cfg.multi_simulations);
+        std::vector<double> scores(cfg.multi_simulations, 0.0);
+        #pragma omp parallel for shared(scores) threadprivate(env)
+        for(int thread = 0; thread < cfg.multi_simulations; thread++)
         {
-            reward = env.step(env.sample_actions(cfg.num_actions));
-            num_steps++;
-            score += reward*g;
-            g *= cfg.gamma;
+            const auto thread_num = omp_get_thread_num();
+            double score(0), g(1), reward(0);
+            int num_steps(0);
+            while(!env.all_done() && num_steps < cfg.steps_limit)
+            {
+                reward = env.step(env.sample_actions(cfg.num_actions));
+                num_steps++;
+                score += reward*g;
+                g *= cfg.gamma;
+            }
+            scores[thread_num] = score;
         }
-        for(int i = 0; i < num_steps; i++)
-            env.step_back();
-        return score;
+        const auto result = accumulate(scores.begin(), scores.end(), 0.0) / scores.size();
+        return result;
     }
     double uct(Node* n) const
     {
