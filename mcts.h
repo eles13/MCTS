@@ -1,3 +1,8 @@
+#ifdef __APPLE__
+    #include "/usr/local/opt/libomp/include/omp.h"
+#else
+    #include "omp.h"
+#endif
 #include <iostream>
 #include <list>
 #include <vector>
@@ -57,33 +62,43 @@ public:
     }
     double simulation()
     {
-        double score(0), g(1), reward(0);
-        int num_steps(0);
-        while(!env.all_done() && num_steps < cfg.steps_limit)
+        omp_set_num_threads(cfg.multi_simulations);
+        double score(0); 
+        #pragma omp parallel for reduction(+: score) firstprivate(env, cfg)
+        for(int thread = 0; thread < cfg.multi_simulations; thread++)
         {
-            reward = env.step(env.sample_actions(cfg.num_actions));
-            num_steps++;
-            score += reward*g;
-            g *= cfg.gamma;
+            env.reset_seed();
+            const auto thread_num = omp_get_thread_num();
+            double g(1), reward(0);
+            int num_steps(0);
+            while(!env.all_done() && num_steps < cfg.steps_limit)
+            {
+                reward = env.step(env.sample_actions(cfg.num_actions, cfg.use_move_limits, cfg.agents_as_obstacles));
+                num_steps++;
+                score += reward*g;
+                g *= cfg.gamma;
+            }
         }
-        for(int i = 0; i < num_steps; i++)
-            env.step_back();
-        return score;
+        const auto result = score/cfg.multi_simulations;
+        return result;
     }
     double uct(Node* n) const
     {
         return n->q + cfg.uct_c*std::sqrt(2.0*std::log(n->parent->cnt)/n->cnt);
     }
-    int expansion(Node* n) const
+    int expansion(Node* n, const int agent_idx) const
     {
         int best_action(0), k(0);
         double best_score(-1);
         for(auto c:n->child_nodes) {
-            if(c == nullptr)
-                return k;
-            if (uct(c) > best_score) {
-                best_action = k;
-                best_score = uct(c);
+            if (cfg.use_move_limits && env.check_action(agent_idx, k, cfg.agents_as_obstacles) || !cfg.use_move_limits)
+            {
+                if(c == nullptr)
+                    return k;
+                if (uct(c) > best_score) {
+                    best_action = k;
+                    best_score = uct(c);
+                }
             }
             k++;
         }
@@ -96,7 +111,7 @@ public:
         int action(0);
         double score;
         if(!env.reached_goal(agent_idx))
-            action = expansion(n);
+            action = expansion(n, agent_idx);
         if(actions.size() == env.get_num_agents())
         {
             double reward = env.step(actions);
@@ -129,10 +144,10 @@ public:
         }
         return score*cfg.gamma;
     }
-    void loop()
+    void loop(std::vector<int>& prev_actions)
     {
         for (int i = 0; i < cfg.num_expansions; i++) {
-            double score = selection(root, {});
+            double score = selection(root, prev_actions);
             root->update_value(score);
         }
         return;
@@ -153,12 +168,15 @@ public:
     }
     bool act()
     {
-        loop();
         env.render();
         std::vector<int> actions;
         std::vector<char> action_names = {'S','U', 'D', 'L', 'R'};
         for(int agent_idx = 0; agent_idx < env.get_num_agents(); agent_idx++)
         {
+            if (!env.reached_goal(agent_idx))
+            {
+                loop(actions);
+            }
             std::cout<<agent_idx<<" "<<root->q<<std::endl;
             for(int i = 0; i < cfg.num_actions; i++) {
                 int cnt = (root->child_nodes[i] == nullptr) ? 0 : root->child_nodes[i]->cnt;
