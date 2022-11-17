@@ -176,7 +176,6 @@ public:
 
     void render()
     {
-        engine.seed(std::chrono::system_clock::now().time_since_epoch().count());
         for(int i = 0; i < num_agents; i++) {
             auto c1 = cur_positions[i], c2 = goals[i];
             if(c1.first != c2.first || c1.second != c2.second)
