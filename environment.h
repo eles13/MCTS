@@ -25,15 +25,27 @@ public:
         load_instance(fileName.c_str());
         num_agents = goals.size();
         reached.resize(num_agents, false);
+        set_seed(seed);
+    }
+
+    void set_seed(const int seed)
+    {
         if(seed < 0)
             engine.seed(std::chrono::system_clock::now().time_since_epoch().count());
         else
             engine.seed(seed);
     }
+
+    void reset_seed()
+    {
+        engine.seed(std::chrono::system_clock::now().time_since_epoch().count());
+    }
+
     int get_num_agents()
     {
         return num_agents;
     }
+
     bool reached_goal(int i)
     {
         if(i >= 0 && i < num_agents)
@@ -41,6 +53,7 @@ public:
         else
             return false;
     }
+
     void load_instance(const char* fileName)
     {
         XMLDocument doc;
@@ -74,6 +87,7 @@ public:
             curi++;
         }
     }
+
     double step(std::vector<int> actions)
     {
         std::vector<std::pair<int, int>> executed_pos;
@@ -126,6 +140,7 @@ public:
         cur_positions = executed_pos;
         return reward;
     }
+
     void step_back()
     {
         for(int i = 0; i < num_agents; i++)
@@ -137,17 +152,28 @@ public:
         }
         made_actions.pop_back();
     }
-    std::vector<int> sample_actions(int num_actions)
+
+    std::vector<int> sample_actions(int num_actions, const bool use_move_limits=false, const bool agents_as_obstackles=false)
     {
         std::vector<int> actions;
         for(int i = 0; i < num_agents; i++)
-            actions.emplace_back(engine() % num_actions);
+        {
+            auto action = engine() % num_actions;
+            if (use_move_limits)
+            {
+                while (!check_action(i, action, agents_as_obstackles))
+                    action = engine() % num_actions;
+            }
+            actions.emplace_back(action);
+        }
         return actions;
-    };
+    }
+
     bool all_done()
     {
         return num_agents == std::accumulate(reached.begin(), reached.end(), 0);
     }
+
     void render()
     {
         engine.seed(std::chrono::system_clock::now().time_since_epoch().count());
@@ -175,7 +201,41 @@ public:
             }
             std::cout<<std::endl;
         }
-    };
+    }
+
+    const bool check_action(const int agent_idx, const int action, const bool agents_as_obstacles) const
+    {
+        const std::pair<int, int> future_position = {cur_positions[agent_idx].first + moves[action].first, cur_positions[agent_idx].second + moves[action].second};
+        if (future_position.first < 0 || future_position.second < 0 || future_position.first >= grid.size() || future_position.second >= grid.size())
+            return false;
+        if (grid[future_position.first][future_position.second] == 1)
+            return false;
+        if (agents_as_obstacles)
+        {
+            for (int i = 0; i < num_agents; i++)
+            {
+                if (i != agent_idx)
+                {
+                    if((cur_positions[i].first == future_position.first) && (cur_positions[i].second == future_position.second))
+                        return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    Environment(const Environment& orig)
+    {
+        num_agents = orig.num_agents;
+        moves = orig.moves;
+        grid = orig.grid;
+        goals = orig.goals;
+        cur_positions = orig.cur_positions;
+        made_actions = orig.made_actions;
+        reached = orig.reached;
+        engine = orig.engine;
+        reset_seed();
+    }
 };
 
 #endif //MCTS_ENVIRONMENT_H
