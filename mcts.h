@@ -9,6 +9,7 @@
 #include <numeric>
 #include <cmath>
 #include <string>
+#include <chrono>
 #include "environment.h"
 #include "config.h"
 
@@ -77,6 +78,7 @@ struct Node
     void zero_snes()
     {
         cnt_sne = 0;
+        mask_picked.clear();
         mask_picked.resize(num_actions_, false);
         for (auto child : child_nodes)
         {
@@ -105,17 +107,15 @@ struct Node
 class MonteCarloTreeSearch
 {
     Node* root;
-    std::vector<Node> all_nodes;
+    std::list<Node> all_nodes;
     Environment env;
     Config cfg;
     BS::thread_pool pool;
-    bool use_batch_parallelization = false;
 public:
     explicit MonteCarloTreeSearch(const std::string& fileName, int seed = -1):env(fileName, seed)
     {
         all_nodes.push_back(Node(nullptr, -1, 0, cfg.num_actions, 0));
         root = &all_nodes.back();
-        use_batch_parallelization = cfg.batch_size > 1;
     }
 
     double simulation(Environment& local_env)
@@ -173,7 +173,9 @@ public:
             if (cfg.use_move_limits && env.check_action(agent_idx, k, cfg.agents_as_obstacles) || !cfg.use_move_limits)
             {
                 if(c == nullptr)
+                {
                     return k;
+                }
                 if (uct(c) > best_score) {
                     best_action = k;
                     best_score = uct(c);
@@ -195,6 +197,7 @@ public:
         if(actions.size() == env.get_num_agents())
         {
             double reward = env.step(actions);
+            actions.clear();
             if(env.all_done())
                 score = reward;
             else
@@ -213,7 +216,7 @@ public:
         }
         else
         {
-            if(n->child_nodes[action]== nullptr)
+            if(n->child_nodes[action] == nullptr)
             {
                 all_nodes.emplace_back(n, action, 0, cfg.num_actions, next_agent_idx);
                 n->child_nodes[action] = &all_nodes.back();
@@ -231,31 +234,45 @@ public:
         double best_score(-1);
         for(auto c: n->child_nodes)
         {
-            if ((cfg.use_move_limits && env.check_action(agent_idx, k, cfg.agents_as_obstacles) || !cfg.use_move_limits) && !n->mask_picked[agent_idx])
+            if ((cfg.use_move_limits && env.check_action(agent_idx, k, cfg.agents_as_obstacles) || !cfg.use_move_limits))
             {
-                if(c == nullptr)
+                if(c == nullptr && !n->mask_picked[k])
                     return k;
+                else if (c == nullptr)
+                {
+                    k++;
+                    continue;
+                }
                 const auto uct_val = batch_uct(c);
-                if (uct_val > best_score) {
+                if (uct_val > best_score)
+                {
                     best_action = k;
                     best_score = uct_val;
                 }
             }
             k++;
         }
+        if (best_score < 0)
+        {
+            best_action = -1;
+        }
         return best_action;
     }
 
-    std::vector<int> batch_selection(Node* n, std::vector<int> actions) //ref???
+    std::vector<int> batch_selection(Node* n, std::vector<int> actions)
     {
         int agent_idx = int(actions.size())%env.get_num_agents();
         int action(0);
         if(!env.reached_goal(agent_idx))
             action = select_action_for_batch_path(n, agent_idx);
         actions.push_back(action);
-        if (n->child_nodes[agent_idx] != nullptr)
+        if (action < 0)
         {
-            n->mask_picked[agent_idx] = true;
+            return actions;
+        }
+        if (n->child_nodes[action] == nullptr)
+        {
+            n->mask_picked[action] = true;
             n->cnt_sne += 1;
             return actions;
         }
@@ -315,15 +332,18 @@ public:
             for(int batch = 0; batch < cfg.batch_size; batch++)
             {
                 auto batch_actions = batch_selection(root, prev_actions);
-                for(auto _: prev_actions)
-                    pop_front(batch_actions);
-                batch_paths.push_back(batch_actions);
-                pool_futures.push_back(pool.submit(&MonteCarloTreeSearch::batch_expansion, this, batch_actions, prev_actions, env));
+                if (batch_actions[batch_actions.size() - 1] >= 0)
+                {
+                    for(auto _: prev_actions)
+                        pop_front(batch_actions);
+                    batch_paths.push_back(batch_actions);
+                    pool_futures.push_back(pool.submit(&MonteCarloTreeSearch::batch_expansion, this, batch_actions, prev_actions, env));
+                }
             }
             for (int enum_paths = 0; enum_paths < batch_paths.size(); enum_paths++)
             {
                 Node* local_root = root;
-                for (int enum_actions; enum_actions < batch_paths[enum_paths].size() - 1; enum_actions++)
+                for (int enum_actions = 0; enum_actions < batch_paths[enum_paths].size() - 1; enum_actions++)
                 {
                     local_root = local_root->child_nodes[batch_paths[enum_paths][enum_actions]];
                 }
@@ -331,7 +351,7 @@ public:
                 const auto action = batch_paths[enum_paths][batch_paths[enum_paths].size() - 1];
                 if(local_root->child_nodes[action] == nullptr)
                 {
-                    all_nodes.emplace_back(local_root, action, score, cfg.num_actions, (prev_actions.size() + batch_paths[enum_paths].size()) % env.get_num_agents());
+                    all_nodes.emplace_back(local_root, action, score, cfg.num_actions, (local_root->agent_id + 1) % env.get_num_agents());
                     local_root->child_nodes[action] = &all_nodes.back();
                     local_root->update_value_batch(score);
                 }
@@ -352,7 +372,7 @@ public:
         {
             if (!env.reached_goal(agent_idx))
             {
-                if (use_batch_parallelization)
+                if (cfg.batch_size > 1)
                 {
                     batch_loop(actions);
                 }
