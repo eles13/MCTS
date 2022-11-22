@@ -2,7 +2,7 @@
 
 int main(int argc, char* argv[])
 {
-    std::string task("test_task.xml");
+    std::string task("../test_task.xml");
     if(argc > 1)
         task = argv[1];
     int seed(-1);
