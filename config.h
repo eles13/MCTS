@@ -11,7 +11,8 @@ struct Config
     int multi_simulations = 1;
     bool use_move_limits = true;
     bool agents_as_obstacles = false;
-    int batch_size = 8;
+    int batch_size = 1;
+    int num_parallel_trees = 1;
 };
 
 #endif //MCTS_CONFIG_H

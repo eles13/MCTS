@@ -89,6 +89,18 @@ struct Node
         }
     }
 
+    void update_q()
+    {
+        q = w/cnt;
+        for(auto child: child_nodes)
+        {
+            if(child)
+            {
+                child->update_q();
+            }
+        }
+    }
+
     Node(const Node& orig)
     {
         action_id = orig.action_id;
@@ -114,7 +126,7 @@ class MonteCarloTreeSearch
 public:
     explicit MonteCarloTreeSearch(const std::string& fileName, int seed = -1):env(fileName, seed)
     {
-        all_nodes.push_back(Node(nullptr, -1, 0, cfg.num_actions, 0));
+        all_nodes.emplace_back(nullptr, -1, 0, cfg.num_actions, 0);
         root = &all_nodes.back();
     }
 
@@ -186,7 +198,7 @@ public:
         return best_action;
     }
 
-    double selection(Node* n, std::vector<int> actions)
+    double selection(Node* n, std::vector<int> actions, Environment& env)
     {
         int agent_idx = int(actions.size())%env.get_num_agents();
         int next_agent_idx = (agent_idx + 1)%env.get_num_agents();
@@ -209,7 +221,7 @@ public:
                     n->child_nodes[action] = &all_nodes.back();
                 }
                 else
-                    score = reward +cfg.gamma*selection(n->child_nodes[action], {action});
+                    score = reward +cfg.gamma*selection(n->child_nodes[action], {action}, env);
             }
             n->update_value(score);
             env.step_back();
@@ -222,7 +234,7 @@ public:
                 n->child_nodes[action] = &all_nodes.back();
             }
             actions.push_back(action);
-            score = selection(n->child_nodes[action], actions);
+            score = selection(n->child_nodes[action], actions, env);
             n->update_value(score);
         }
         return score*cfg.gamma;
@@ -317,7 +329,7 @@ public:
     {
         for (int i = 0; i < cfg.num_expansions; i++)
         {
-            double score = selection(root, prev_actions);
+            double score = selection(root, prev_actions, this->env);
             root->update_value(score);
         }
     }
@@ -363,6 +375,51 @@ public:
         }
     }
 
+    void retrieve_statistics(Node* tree, Node* from_root)
+    {
+        from_root->cnt += tree->cnt;
+        from_root->w += tree->w;
+        int action(0);
+        for(auto c: tree->child_nodes)
+        {
+            if(c != nullptr)
+            {
+                if(from_root->child_nodes[action] == nullptr)
+                {
+                    all_nodes.emplace_back(from_root, action, 0, cfg.num_actions, c->agent_id);
+                    from_root->child_nodes[action] = &all_nodes.back();
+                }
+                retrieve_statistics(c, from_root->child_nodes[action]);
+            }
+            action++;
+        }
+    }
+
+    Node tree_parallelization_loop_internal(Node root, std::vector<int> prev_actions, Environment cpenv)
+    {
+        for (int i = 0; i < cfg.num_expansions; i++)
+        {
+            double score = selection(&root, prev_actions, cpenv);
+            root.update_value(score);
+        }
+        return root;
+    }
+
+    void tree_parallelization_loop(std::vector<int>& prev_actions)
+    {
+        std::vector<std::future<Node>> futures;
+        for(int i = 0; i < cfg.num_parallel_trees; i++)
+        {
+            futures.push_back(pool.submit(&MonteCarloTreeSearch::tree_parallelization_loop_internal, this, *root, prev_actions, env));
+        }
+        for(int i = 0; i < cfg.num_parallel_trees; i++)
+        {
+            auto tree = futures[i].get();
+            retrieve_statistics(&tree, root);
+        }
+        root->update_q();
+    }
+
     bool act()
     {
         env.render();
@@ -375,6 +432,10 @@ public:
                 if (cfg.batch_size > 1)
                 {
                     batch_loop(actions);
+                }
+                else if (cfg.num_parallel_trees > 1)
+                {
+                    tree_parallelization_loop(actions);
                 }
                 else
                 {
