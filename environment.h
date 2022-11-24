@@ -222,6 +222,19 @@ public:
         }
         return true;
     }
+
+    Environment(const Environment& orig)
+    {
+        num_agents = orig.num_agents;
+        moves = orig.moves;
+        grid = orig.grid;
+        goals = orig.goals;
+        cur_positions = orig.cur_positions;
+        made_actions = orig.made_actions;
+        reached = orig.reached;
+        engine = orig.engine;
+        reset_seed();
+    }
 };
 
 #endif //MCTS_ENVIRONMENT_H
