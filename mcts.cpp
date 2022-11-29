@@ -1,3 +1,7 @@
+// cppimport
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+#include <pybind11/stl_bind.h>
 #ifdef __APPLE__
 #else
     #include "omp.h"
@@ -13,11 +17,8 @@ void pop_front(std::vector<T>& vec)
 }
 
 
-MonteCarloTreeSearch::MonteCarloTreeSearch(const std::string& fileName, int seed):env(fileName, seed)
-{
-    all_nodes.emplace_back(nullptr, -1, 0, cfg.num_actions, 0);
-    root = &all_nodes.back();
-}
+MonteCarloTreeSearch::MonteCarloTreeSearch()
+{}
 
 double MonteCarloTreeSearch::simulation(Environment& local_env)
 {
@@ -71,7 +72,7 @@ int MonteCarloTreeSearch::expansion(Node* n, const int agent_idx) const
     double best_score(-1);
     for(auto c: n->child_nodes)
     {
-        if (cfg.use_move_limits && env.check_action(agent_idx, k, cfg.agents_as_obstacles) || !cfg.use_move_limits)
+        if ((cfg.use_move_limits && env.check_action(agent_idx, k, cfg.agents_as_obstacles)) || !cfg.use_move_limits)
         {
             if(c == nullptr)
             {
@@ -135,7 +136,7 @@ int MonteCarloTreeSearch::select_action_for_batch_path(Node* n, const int agent_
     double best_score(-1);
     for(auto c: n->child_nodes)
     {
-        if ((cfg.use_move_limits && env.check_action(agent_idx, k, cfg.agents_as_obstacles) || !cfg.use_move_limits))
+        if ((cfg.use_move_limits && env.check_action(agent_idx, k, cfg.agents_as_obstacles)) || !cfg.use_move_limits)
         {
             if(c == nullptr && !n->mask_picked[k])
                 return k;
@@ -235,16 +236,16 @@ void MonteCarloTreeSearch::batch_loop(std::vector<int>& prev_actions)
             auto batch_actions = batch_selection(root, prev_actions);
             if (batch_actions[batch_actions.size() - 1] >= 0)
             {
-                for(auto _: prev_actions)
+                for([[maybe_unused]] auto& _ : prev_actions)
                     pop_front(batch_actions);
                 batch_paths.push_back(batch_actions);
                 pool_futures.push_back(pool.submit(&MonteCarloTreeSearch::batch_expansion, this, batch_actions, prev_actions, env));
             }
         }
-        for (int enum_paths = 0; enum_paths < batch_paths.size(); enum_paths++)
+        for (size_t enum_paths = 0; enum_paths < batch_paths.size(); enum_paths++)
         {
             Node* local_root = root;
-            for (int enum_actions = 0; enum_actions < batch_paths[enum_paths].size() - 1; enum_actions++)
+            for (size_t enum_actions = 0; enum_actions < batch_paths[enum_paths].size() - 1; enum_actions++)
             {
                 local_root = local_root->child_nodes[batch_paths[enum_paths][enum_actions]];
             }
@@ -309,12 +310,11 @@ void MonteCarloTreeSearch::tree_parallelization_loop(std::vector<int>& prev_acti
     root->update_q();
 }
 
-bool MonteCarloTreeSearch::act()
+std::vector<int> MonteCarloTreeSearch::act()
 {
-    env.render();
     std::vector<int> actions;
     std::vector<char> action_names = {'S','U', 'D', 'L', 'R'};
-    for(int agent_idx = 0; agent_idx < env.get_num_agents(); agent_idx++)
+    for(size_t agent_idx = 0; agent_idx < env.get_num_agents(); agent_idx++)
     {
         if (!env.reached_goal(agent_idx))
         {
@@ -331,28 +331,63 @@ bool MonteCarloTreeSearch::act()
                 loop(actions);
             }
         }
-        std::cout<<agent_idx<<" "<<root->q<<std::endl;
-        for(int i = 0; i < cfg.num_actions; i++) {
-            int cnt = (root->child_nodes[i] == nullptr) ? 0 : root->child_nodes[i]->cnt;
-            std::cout << action_names[i] << ":" << cnt << " ";
+        if (cfg.render)
+        {
+            std::cout<<agent_idx<<" "<<root->q<<std::endl;
+            for(int i = 0; i < cfg.num_actions; i++) {
+                int cnt = (root->child_nodes[i] == nullptr) ? 0 : root->child_nodes[i]->cnt;
+                std::cout << action_names[i] << ":" << cnt << " ";
+            }
+            std::cout<<std::endl;
+            for(int i = 0; i < cfg.num_actions; i++) {
+                double c = (root->child_nodes[i] == nullptr) ? 0.0 : uct(root->child_nodes[i]);
+                std::cout << action_names[i] << ":" << c << " ";
+            }
+            std::cout<<std::endl;
+            std::cout<<"---------------------------------------------------------------------\n";
         }
-        std::cout<<std::endl;
-        for(int i = 0; i < cfg.num_actions; i++) {
-            double c = (root->child_nodes[i] == nullptr) ? 0.0 : uct(root->child_nodes[i]);
-            std::cout << action_names[i] << ":" << c << " ";
-        }
-        std::cout<<std::endl;
-        std::cout<<"---------------------------------------------------------------------\n";
         int action = root->get_action(env);
         root = root->child_nodes[action];
 
         actions.push_back(action);
     }
-    for(auto a: actions)
-        std::cout<<a<<" ";
-    std::cout<<" actions\n";
+
     env.step(actions);
+    if (cfg.render)
+    {
+        for(auto a: actions)
+            std::cout<<a<<" ";
+        std::cout<<" actions\n";
+    }
     if(env.all_done())
         env.render();
-    return env.all_done();
+    return actions;
 }
+
+void MonteCarloTreeSearch::set_config(const Config& config)
+{
+    cfg = config;
+}
+
+void MonteCarloTreeSearch::set_env(Environment& env_)
+{
+    env = env_;
+    all_nodes.emplace_back(nullptr, -1, 0, cfg.num_actions, 0);
+    root = &all_nodes.back();
+}
+
+PYBIND11_MODULE(mcts, m) {
+    py::class_<MonteCarloTreeSearch>(m, "MonteCarloTreeSearch")
+            .def(py::init<>())
+            .def("act", &MonteCarloTreeSearch::act)
+            .def("set_config", &MonteCarloTreeSearch::set_config)
+            .def("set_env", &MonteCarloTreeSearch::set_env)
+            ;
+}
+
+/*
+<%
+cfg['extra_compile_args'] = ['-std=c++17']
+setup_pybind11(cfg)
+%>
+*/

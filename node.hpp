@@ -1,6 +1,6 @@
 #include <list>
 #include <vector>
-#include "environment.h"
+#include "environment.cpp"
 
 struct Node
 {
@@ -16,7 +16,7 @@ struct Node
     int num_actions_;
 
     Node(Node* _parent, int _action_id, double _w, int num_actions, int _agent_id=-1)
-            :parent(_parent), action_id(_action_id), w(_w), agent_id(_agent_id)
+            : action_id(_action_id), parent(_parent), w(_w), agent_id(_agent_id)
     {
         cnt = 1;
         q = w;
