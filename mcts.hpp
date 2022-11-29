@@ -30,6 +30,8 @@ public:
     void set_config(const Config& config);
 
 protected:
+    double single_simulation(Environment local_env);
+
     double simulation(Environment& local_env);
 
     double uct(Node* n) const;

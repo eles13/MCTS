@@ -2,10 +2,6 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
-#ifdef __APPLE__
-#else
-    #include "omp.h"
-#endif
 #include "BS_thread_pool.hpp"
 #include "mcts.hpp"
 
@@ -20,36 +16,33 @@ void pop_front(std::vector<T>& vec)
 MonteCarloTreeSearch::MonteCarloTreeSearch()
 {}
 
+double MonteCarloTreeSearch::single_simulation(Environment local_env)
+{
+    local_env.reset_seed();
+    double score(0);
+    double g(1), reward(0);
+    int num_steps(0);
+    while(!local_env.all_done() && num_steps < cfg.steps_limit)
+    {
+        reward = local_env.step(local_env.sample_actions(cfg.num_actions, cfg.use_move_limits, cfg.agents_as_obstacles));
+        num_steps++;
+        score += reward*g;
+        g *= cfg.gamma;
+    }
+    return score;
+}
+
 double MonteCarloTreeSearch::simulation(Environment& local_env)
 {
     double score(0);
-    #ifdef __APPLE__
-    #else
-    omp_set_num_threads(cfg.multi_simulations);
-    #pragma omp parallel for reduction(+: score) firstprivate(local_env, cfg)
-    #endif
+    std::vector<std::future<double>> futures;
     for(int thread = 0; thread < cfg.multi_simulations; thread++)
     {
-        local_env.reset_seed();
-        #ifdef __APPLE__
-        #else
-        const int thread_num = omp_get_thread_num();
-        #endif
-        double g(1), reward(0);
-        int num_steps(0);
-        while(!local_env.all_done() && num_steps < cfg.steps_limit)
-        {
-            reward = local_env.step(local_env.sample_actions(cfg.num_actions, cfg.use_move_limits, cfg.agents_as_obstacles));
-            num_steps++;
-            score += reward*g;
-            g *= cfg.gamma;
-        }
-        #ifdef __APPLE__
-        for(int i = 0; i < num_steps; i++)
-        {
-            local_env.step_back();
-        }
-        #endif
+        futures.push_back(pool.submit(&MonteCarloTreeSearch::single_simulation, this, local_env));
+    }
+    for(int thread = 0; thread < cfg.multi_simulations; thread++)
+    {
+        score += futures[thread].get();
     }
     const auto result = score/cfg.multi_simulations;
     return result;
