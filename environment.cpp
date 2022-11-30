@@ -186,7 +186,9 @@ public:
 
     const bool check_action(const int agent_idx, const int action, const bool agents_as_obstacles) const
     {
+        //std::cout<<"ag_idx "<<agent_idx<<"\n";
         const std::pair<int, int> future_position = {cur_positions[agent_idx].first + moves[action].first, cur_positions[agent_idx].second + moves[action].second};
+        //std::cout<<"gs "<<grid.size()<<" pos "<<future_position.first<<" "<<future_position.second<<"\n";
         if (future_position.first < 0 || future_position.second < 0 || future_position.first >= static_cast<int>(grid.size()) || future_position.second >= static_cast<int>(grid.size()))
             return false;
         if (grid[future_position.first][future_position.second] == 1)

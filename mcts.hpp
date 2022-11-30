@@ -17,10 +17,11 @@ class MonteCarloTreeSearch
 {
     Node* root;
     std::list<Node> all_nodes;
-    Environment env;
     Config cfg;
     BS::thread_pool pool;
 public:
+    Environment env;
+
     explicit MonteCarloTreeSearch();
 
     std::vector<int> act();

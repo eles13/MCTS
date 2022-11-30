@@ -11,11 +11,11 @@ struct Config
     double uct_c = 1.0;
     int steps_limit = 64;
     int multi_simulations = 1;
-    bool use_move_limits = true;
+    bool use_move_limits = false;
     bool agents_as_obstacles = false;
     int batch_size = 1;
     int num_parallel_trees = 1;
-    bool render = false;
+    bool render = true;
 };
 
 PYBIND11_MODULE(config, m) {

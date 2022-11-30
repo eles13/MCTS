@@ -4,6 +4,7 @@
 #include <pybind11/stl_bind.h>
 #include "BS_thread_pool.hpp"
 #include "mcts.hpp"
+namespace py = pybind11;
 
 template<typename T>
 void pop_front(std::vector<T>& vec)
@@ -35,14 +36,21 @@ double MonteCarloTreeSearch::single_simulation(Environment local_env)
 double MonteCarloTreeSearch::simulation(Environment& local_env)
 {
     double score(0);
-    std::vector<std::future<double>> futures;
-    for(int thread = 0; thread < cfg.multi_simulations; thread++)
+    if (cfg.multi_simulations > 1)
     {
-        futures.push_back(pool.submit(&MonteCarloTreeSearch::single_simulation, this, local_env));
+        std::vector<std::future<double>> futures;
+        for(int thread = 0; thread < cfg.multi_simulations; thread++)
+        {
+            futures.push_back(pool.submit(&MonteCarloTreeSearch::single_simulation, this, local_env));
+        }
+        for(int thread = 0; thread < cfg.multi_simulations; thread++)
+        {
+            score += futures[thread].get();
+        }
     }
-    for(int thread = 0; thread < cfg.multi_simulations; thread++)
+    else
     {
-        score += futures[thread].get();
+        score = single_simulation(local_env);
     }
     const auto result = score/cfg.multi_simulations;
     return result;
@@ -306,6 +314,14 @@ void MonteCarloTreeSearch::tree_parallelization_loop(std::vector<int>& prev_acti
 std::vector<int> MonteCarloTreeSearch::act()
 {
     std::vector<int> actions;
+    if (env.all_done())
+    {
+        for(size_t agent_idx = 0; agent_idx < env.get_num_agents(); agent_idx++)
+        {
+            actions.push_back(0);
+        }
+        return actions;
+    }
     std::vector<char> action_names = {'S','U', 'D', 'L', 'R'};
     for(size_t agent_idx = 0; agent_idx < env.get_num_agents(); agent_idx++)
     {
@@ -352,8 +368,6 @@ std::vector<int> MonteCarloTreeSearch::act()
             std::cout<<a<<" ";
         std::cout<<" actions\n";
     }
-    if(env.all_done())
-        env.render();
     return actions;
 }
 

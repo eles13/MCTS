@@ -46,11 +46,15 @@ struct Node
     int get_action(const Environment& env)
     {
         int best_action(0), best_score(-1), k(0);
-        for(auto c:child_nodes) {
-            if (c != nullptr && c->cnt > best_score)
+        for(auto c: child_nodes)
+        {
+            if (c != nullptr)
             {
-                best_action = k;
-                best_score = c->cnt;
+                if (c->cnt > best_score)
+                {
+                    best_action = k;
+                    best_score = c->cnt;
+                }
             }
             k++;
         }
