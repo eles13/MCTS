@@ -1,17 +1,18 @@
-#ifndef MCTS_ENVIRONMENT_H
-#define MCTS_ENVIRONMENT_H
+// cppimport
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+#include <pybind11/stl_bind.h>
 #include <vector>
 #include <iostream>
 #include <random>
 #include <chrono>
-#include "tinyxml2.h"
 #define OBSTACLE 1
 #define TRAVERSABLE 0
-using namespace tinyxml2;
+namespace py = pybind11;
 
 class Environment
 {
-    int num_agents;
+    size_t num_agents;
     std::vector<std::pair<int, int>> moves = {{0,0}, {-1, 0}, {1,0},{0,-1},{0,1}};
     std::vector<std::vector<int>> grid;
     std::vector<std::pair<int, int>> goals;
@@ -20,12 +21,9 @@ class Environment
     std::vector<bool> reached;
     std::default_random_engine engine;
 public:
-    explicit Environment(const std::string& fileName, int seed)
+    explicit Environment()
     {
-        load_instance(fileName.c_str());
-        num_agents = goals.size();
-        reached.resize(num_agents, false);
-        set_seed(seed);
+        num_agents = 0;
     }
 
     void set_seed(const int seed)
@@ -41,12 +39,30 @@ public:
         engine.seed(std::chrono::system_clock::now().time_since_epoch().count());
     }
 
-    int get_num_agents()
+    size_t get_num_agents()
     {
         return num_agents;
     }
 
-    bool reached_goal(int i)
+    void add_agent(int si, int sj, int gi, int gj)
+    {
+        cur_positions.push_back({si, sj});
+        goals.push_back({gi, gj});
+        num_agents++;
+        reached.push_back(false);
+    }
+
+    void create_grid(int height, int width)
+    {
+        grid = std::vector<std::vector<int>>(height, std::vector<int>(width,TRAVERSABLE));
+    }
+
+    void add_obstacle(int i, int j)
+    {
+        grid[i][j] = OBSTACLE;
+    }
+
+    bool reached_goal(size_t i)
     {
         if(i >= 0 && i < num_agents)
             return reached[i];
@@ -54,44 +70,10 @@ public:
             return false;
     }
 
-    void load_instance(const char* fileName)
-    {
-        XMLDocument doc;
-        if(doc.LoadFile(fileName) != XMLError::XML_SUCCESS)
-        {
-            std::cout << "Error openning input XML file."<<std::endl;
-            return;
-        }
-        XMLElement* root;
-        root = doc.FirstChildElement("root");
-        for(auto elem = root->FirstChildElement("agent"); elem; elem = elem->NextSiblingElement("agent"))
-        {
-            cur_positions.emplace_back(elem->IntAttribute("start_i"), elem->IntAttribute("start_j"));
-            goals.emplace_back(elem->IntAttribute("goal_i"), elem->IntAttribute("goal_j"));
-        }
-        XMLElement* map = root->FirstChildElement("map");
-        grid = std::vector<std::vector<int>>(map->IntAttribute("width"), std::vector<int>(map->IntAttribute("height"),TRAVERSABLE));
-        int curi(0), curj(0);
-        for(auto row = map->FirstChildElement("row"); row; row = row->NextSiblingElement("row"))
-        {
-            std::string values = row->GetText();
-            curj = 0;
-            for(char value : values)
-            {
-                if(value == ' ')
-                    continue;
-                if(value == '1')
-                    grid[curi][curj] = OBSTACLE;
-                curj++;
-            }
-            curi++;
-        }
-    }
-
     double step(std::vector<int> actions)
     {
         std::vector<std::pair<int, int>> executed_pos;
-        for(int i = 0; i < num_agents; i++) {
+        for(size_t i = 0; i < num_agents; i++) {
             if (reached[i])
             {
                 executed_pos.push_back(cur_positions[i]);
@@ -101,8 +83,8 @@ public:
                 executed_pos.emplace_back(cur_positions[i].first + moves[actions[i]].first,
                                           cur_positions[i].second + moves[actions[i]].second);
         }
-        for(int i = 0; i < num_agents; i++)
-            for(int j = i+1; j < num_agents; j++) {
+        for(size_t i = 0; i < num_agents; i++)
+            for(size_t j = i+1; j < num_agents; j++) {
                 if (reached[i] || reached[j])
                     continue;
                 if ((executed_pos[i].first == executed_pos[j].first &&
@@ -119,15 +101,15 @@ public:
                 }
             }
         double reward(0);
-        for(int i = 0; i < num_agents; i++)
-            if(executed_pos[i].first < 0 || executed_pos[i].first >= grid.size() ||
-               executed_pos[i].second < 0 || executed_pos[i].second >= grid[0].size()
+        for(size_t i = 0; i < num_agents; i++)
+            if(executed_pos[i].first < 0 || executed_pos[i].first >= static_cast<int>(grid.size()) ||
+               executed_pos[i].second < 0 || executed_pos[i].second >= static_cast<int>(grid[0].size())
                || grid[executed_pos[i].first][executed_pos[i].second])
             {
                 executed_pos[i] = cur_positions[i];
                 actions[i] = 0;
             }
-        for(int i = 0; i < num_agents; i++) {
+        for(size_t i = 0; i < num_agents; i++) {
             if (reached[i])
                 continue;
             if(executed_pos[i].first == goals[i].first && executed_pos[i].second == goals[i].second)
@@ -143,7 +125,7 @@ public:
 
     void step_back()
     {
-        for(int i = 0; i < num_agents; i++)
+        for(size_t i = 0; i < num_agents; i++)
         {
             cur_positions[i].first = cur_positions[i].first - moves[made_actions.back()[i]].first;
             cur_positions[i].second = cur_positions[i].second - moves[made_actions.back()[i]].second;
@@ -156,7 +138,7 @@ public:
     std::vector<int> sample_actions(int num_actions, const bool use_move_limits=false, const bool agents_as_obstackles=false)
     {
         std::vector<int> actions;
-        for(int i = 0; i < num_agents; i++)
+        for(size_t i = 0; i < num_agents; i++)
         {
             auto action = engine() % num_actions;
             if (use_move_limits)
@@ -171,12 +153,12 @@ public:
 
     bool all_done()
     {
-        return num_agents == std::accumulate(reached.begin(), reached.end(), 0);
+        return static_cast<int>(num_agents) == std::accumulate(reached.begin(), reached.end(), 0);
     }
 
     void render()
     {
-        for(int i = 0; i < num_agents; i++) {
+        for(size_t i = 0; i < num_agents; i++) {
             auto c1 = cur_positions[i], c2 = goals[i];
             if(c1.first != c2.first || c1.second != c2.second)
             {
@@ -184,14 +166,14 @@ public:
                 grid[c2.first][c2.second] = i + 2 + num_agents;
             }
         }
-        for(int i = 0; i < grid.size(); i++) {
-            for (int j = 0; j < grid[0].size(); j++) {
+        for(size_t i = 0; i < grid.size(); i++) {
+            for (size_t j = 0; j < grid[0].size(); j++) {
                 if (grid[i][j] == 0)
                     std::cout << " . ";
                 else if (grid[i][j] == 1)
                     std::cout << " # ";
                 else {
-                    if (grid[i][j] > num_agents + 1)
+                    if (grid[i][j] > static_cast<int>(num_agents) + 1)
                         std::cout << "|" << grid[i][j] - 2 - num_agents << "|";
                     else
                         std::cout << " " << grid[i][j] - 2 << " ";
@@ -204,16 +186,18 @@ public:
 
     const bool check_action(const int agent_idx, const int action, const bool agents_as_obstacles) const
     {
+        //std::cout<<"ag_idx "<<agent_idx<<"\n";
         const std::pair<int, int> future_position = {cur_positions[agent_idx].first + moves[action].first, cur_positions[agent_idx].second + moves[action].second};
-        if (future_position.first < 0 || future_position.second < 0 || future_position.first >= grid.size() || future_position.second >= grid.size())
+        //std::cout<<"gs "<<grid.size()<<" pos "<<future_position.first<<" "<<future_position.second<<"\n";
+        if (future_position.first < 0 || future_position.second < 0 || future_position.first >= static_cast<int>(grid.size()) || future_position.second >= static_cast<int>(grid.size()))
             return false;
         if (grid[future_position.first][future_position.second] == 1)
             return false;
         if (agents_as_obstacles)
         {
-            for (int i = 0; i < num_agents; i++)
+            for (size_t i = 0; i < num_agents; i++)
             {
-                if (i != agent_idx)
+                if (static_cast<int>(i) != agent_idx)
                 {
                     if((cur_positions[i].first == future_position.first) && (cur_positions[i].second == future_position.second))
                         return false;
@@ -237,4 +221,26 @@ public:
     }
 };
 
-#endif //MCTS_ENVIRONMENT_H
+PYBIND11_MODULE(environment, m) {
+    py::class_<Environment>(m, "Environment")
+            .def(py::init<>())
+            .def("all_done", &Environment::all_done)
+            .def("sample_actions", &Environment::sample_actions)
+            .def("step", &Environment::step)
+            .def("step_back", &Environment::step_back)
+            .def("set_seed", &Environment::set_seed)
+            .def("reset_seed", &Environment::reset_seed)
+            .def("create_grid", &Environment::create_grid)
+            .def("add_obstacle", &Environment::add_obstacle)
+            .def("add_agent", &Environment::add_agent)
+            .def("render", &Environment::render)
+            .def("get_num_agents", &Environment::get_num_agents)
+            .def("reached_goal", &Environment::reached_goal)
+            ;
+}
+
+/*
+<%
+setup_pybind11(cfg)
+%>
+*/

@@ -10,23 +10,29 @@
 #include <cmath>
 #include <string>
 #include <chrono>
-#include "environment.h"
-#include "config.h"
+#include "config.cpp"
 #include "node.hpp"
 
 class MonteCarloTreeSearch
 {
     Node* root;
     std::list<Node> all_nodes;
-    Environment env;
     Config cfg;
     BS::thread_pool pool;
 public:
-    explicit MonteCarloTreeSearch(const std::string& fileName, int seed = -1);
+    Environment env;
 
-    bool act();
+    explicit MonteCarloTreeSearch();
+
+    std::vector<int> act();
+
+    void set_env(Environment& env_);
+
+    void set_config(const Config& config);
 
 protected:
+    double single_simulation(Environment local_env);
+
     double simulation(Environment& local_env);
 
     double uct(Node* n) const;
