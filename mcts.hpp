@@ -19,6 +19,7 @@ class MonteCarloTreeSearch
     std::list<Node> all_nodes;
     Config cfg;
     BS::thread_pool pool;
+    std::vector<Node*> ptrees;
 public:
     Environment env;
 
@@ -31,6 +32,8 @@ public:
     void set_config(const Config& config);
 
 protected:
+    Node* safe_insert_node(Node* n, const int action, const double score, const int num_actions, const int next_agent_idx);
+
     double single_simulation(Environment local_env);
 
     double simulation(Environment& local_env);
@@ -55,7 +58,7 @@ protected:
 
     void retrieve_statistics(Node* tree, Node* from_root);
 
-    Node tree_parallelization_loop_internal(Node root, std::vector<int> prev_actions, Environment cpenv);
+    void tree_parallelization_loop_internal(Node* root, std::vector<int> prev_actions, Environment cpenv);
 
     void tree_parallelization_loop(std::vector<int>& prev_actions);
 };

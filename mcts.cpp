@@ -4,6 +4,8 @@
 #include <pybind11/stl_bind.h>
 #include "BS_thread_pool.hpp"
 #include "mcts.hpp"
+#include <mutex>
+std::mutex insert_mutex;
 namespace py = pybind11;
 
 template<typename T>
@@ -16,6 +18,13 @@ void pop_front(std::vector<T>& vec)
 
 MonteCarloTreeSearch::MonteCarloTreeSearch()
 {}
+
+Node* MonteCarloTreeSearch::safe_insert_node(Node* n, const int action, const double score, const int num_actions, const int next_agent_idx)
+{
+    const std::lock_guard<std::mutex> lock(insert_mutex);
+    all_nodes.emplace_back(n, action, score, num_actions, next_agent_idx);
+    return &all_nodes.back();
+}
 
 double MonteCarloTreeSearch::single_simulation(Environment local_env)
 {
@@ -108,8 +117,7 @@ double MonteCarloTreeSearch::selection(Node* n, std::vector<int> actions, Enviro
             if(n->child_nodes[action] == nullptr)
             {
                 score = reward + cfg.gamma*simulation(env);
-                all_nodes.emplace_back(n, action, score, cfg.num_actions, next_agent_idx);
-                n->child_nodes[action] = &all_nodes.back();
+                n->child_nodes[action] = safe_insert_node(n, action, score, cfg.num_actions, next_agent_idx);
             }
             else
                 score = reward +cfg.gamma*selection(n->child_nodes[action], {action}, env);
@@ -121,8 +129,7 @@ double MonteCarloTreeSearch::selection(Node* n, std::vector<int> actions, Enviro
     {
         if(n->child_nodes[action] == nullptr)
         {
-            all_nodes.emplace_back(n, action, 0, cfg.num_actions, next_agent_idx);
-            n->child_nodes[action] = &all_nodes.back();
+            n->child_nodes[action] = safe_insert_node(n, action, 0, cfg.num_actions, next_agent_idx);
         }
         actions.push_back(action);
         score = selection(n->child_nodes[action], actions, env);
@@ -254,8 +261,7 @@ void MonteCarloTreeSearch::batch_loop(std::vector<int>& prev_actions)
             const auto action = batch_paths[enum_paths][batch_paths[enum_paths].size() - 1];
             if(local_root->child_nodes[action] == nullptr)
             {
-                all_nodes.emplace_back(local_root, action, score, cfg.num_actions, (local_root->agent_id + 1) % env.get_num_agents());
-                local_root->child_nodes[action] = &all_nodes.back();
+                local_root->child_nodes[action] = safe_insert_node(local_root, action, score, cfg.num_actions, (local_root->agent_id + 1) % env.get_num_agents());
                 local_root->update_value_batch(score);
             }
             else
@@ -277,8 +283,7 @@ void MonteCarloTreeSearch::retrieve_statistics(Node* tree, Node* from_root)
         {
             if(from_root->child_nodes[action] == nullptr)
             {
-                all_nodes.emplace_back(from_root, action, 0, cfg.num_actions, c->agent_id);
-                from_root->child_nodes[action] = &all_nodes.back();
+                from_root->child_nodes[action] = safe_insert_node(from_root, action, 0, cfg.num_actions, c->agent_id);
             }
             retrieve_statistics(c, from_root->child_nodes[action]);
         }
@@ -286,27 +291,27 @@ void MonteCarloTreeSearch::retrieve_statistics(Node* tree, Node* from_root)
     }
 }
 
-Node MonteCarloTreeSearch::tree_parallelization_loop_internal(Node root, std::vector<int> prev_actions, Environment cpenv)
+void MonteCarloTreeSearch::tree_parallelization_loop_internal(Node* root, std::vector<int> prev_actions, Environment cpenv)
 {
     for (int i = 0; i < cfg.num_expansions; i++)
     {
-        double score = selection(&root, prev_actions, cpenv);
-        root.update_value(score);
+        double score = selection(root, prev_actions, cpenv);
+        root->update_value(score);
     }
-    return root;
 }
 
 void MonteCarloTreeSearch::tree_parallelization_loop(std::vector<int>& prev_actions)
 {
-    std::vector<std::future<Node>> futures;
+    std::vector<std::future<void>> futures;
     for(int i = 0; i < cfg.num_parallel_trees; i++)
     {
-        futures.push_back(pool.submit(&MonteCarloTreeSearch::tree_parallelization_loop_internal, this, *root, prev_actions, env));
+        futures.push_back(pool.submit(&MonteCarloTreeSearch::tree_parallelization_loop_internal, this, ptrees[i], prev_actions, env));
     }
-    for(int i = 0; i < cfg.num_parallel_trees; i++)
+    futures[0].get();
+    for(int i = 1; i < cfg.num_parallel_trees; i++)
     {
-        auto tree = futures[i].get();
-        retrieve_statistics(&tree, root);
+        futures[i].get();
+        retrieve_statistics(ptrees[i], root);
     }
     root->update_q();
 }
@@ -314,32 +319,50 @@ void MonteCarloTreeSearch::tree_parallelization_loop(std::vector<int>& prev_acti
 std::vector<int> MonteCarloTreeSearch::act()
 {
     std::vector<int> actions;
-    if (env.all_done())
+    try
     {
-        for(size_t agent_idx = 0; agent_idx < env.get_num_agents(); agent_idx++)
+        if (env.all_done())
         {
-            actions.push_back(0);
+            for(size_t agent_idx = 0; agent_idx < env.get_num_agents(); agent_idx++)
+            {
+                actions.push_back(0);
+            }
+            return actions;
         }
-        return actions;
+    }
+    catch(const std::exception& e)
+    {
+        std::cerr << e.what() << '\n';
+        std::cout << "Forplay\n";
+        throw;
     }
     std::vector<char> action_names = {'S','U', 'D', 'L', 'R'};
     for(size_t agent_idx = 0; agent_idx < env.get_num_agents(); agent_idx++)
     {
-        if (!env.reached_goal(agent_idx))
+        try
         {
-            if (cfg.batch_size > 1)
+            if (!env.reached_goal(agent_idx))
             {
-                batch_loop(actions);
-            }
-            else if (cfg.num_parallel_trees > 1)
-            {
-                tree_parallelization_loop(actions);
-            }
-            else
-            {
-                loop(actions);
+                if (cfg.batch_size > 1)
+                {
+                    batch_loop(actions);
+                }
+                else if (cfg.num_parallel_trees > 1)
+                {
+                    tree_parallelization_loop(actions);
+                }
+                else
+                {
+                    loop(actions);
+                }
             }
         }
+        catch(const std::exception& e)
+        {
+            std::cerr << e.what() << '\n';
+            std::cout<<"loop\n";
+        }
+
         if (cfg.render)
         {
             std::cout<<agent_idx<<" "<<root->q<<std::endl;
@@ -357,6 +380,17 @@ std::vector<int> MonteCarloTreeSearch::act()
         }
         int action = root->get_action(env);
         root = root->child_nodes[action];
+        for(int i = 0; i < cfg.num_parallel_trees; i++)
+        {
+            if(ptrees[i]->child_nodes[action] != nullptr)
+            {
+                ptrees[i] = ptrees[i]->child_nodes[action];
+            }
+            else
+            {
+                ptrees[i]->child_nodes[action] = safe_insert_node(ptrees[i], action, 0, cfg.num_actions, (agent_idx + 1) % env.get_num_agents());
+            }
+        }
 
         actions.push_back(action);
     }
@@ -371,6 +405,23 @@ std::vector<int> MonteCarloTreeSearch::act()
     return actions;
 }
 
+Node* MonteCarloTreeSearch::make_copy_node(Node* orig)
+{
+    auto n = safe_insert_node(orig->parent, orig->action_id, orig->w, orig->num_actions_, orig->agent_id);
+    n->mask_picked = orig->mask_picked;
+    n->cnt = orig->cnt;
+    n->cnt_sne = orig->cnt_sne;
+    n->q = orig->q;
+    for(size_t i = 0; i < orig->child_nodes.size(); i++)
+    {
+        if(orig->child_nodes[i] != nullptr)
+        {
+            n->child_nodes[i] = make_copy_node(orig->child_nodes[i]);
+        }
+    }
+    return n;
+}
+
 void MonteCarloTreeSearch::set_config(const Config& config)
 {
     cfg = config;
@@ -379,8 +430,11 @@ void MonteCarloTreeSearch::set_config(const Config& config)
 void MonteCarloTreeSearch::set_env(Environment& env_)
 {
     env = env_;
-    all_nodes.emplace_back(nullptr, -1, 0, cfg.num_actions, 0);
-    root = &all_nodes.back();
+    for(int i = 0; i < cfg.num_parallel_trees; i++)
+    {
+        ptrees.push_back(safe_insert_node(nullptr, -1, 0, cfg.num_actions, 0));
+    }
+    root = ptrees[0];
 }
 
 PYBIND11_MODULE(mcts, m) {

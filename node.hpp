@@ -2,16 +2,17 @@
 #include <vector>
 #include "environment.cpp"
 
-struct Node
+class Node
 {
+public:
     int action_id;
     Node* parent;
-    int cnt;
+    uint64_t cnt;
     double w;
     double q;
     std::vector<Node*> child_nodes;
     int agent_id;
-    int cnt_sne;
+    uint64_t cnt_sne;
     std::vector<bool> mask_picked;
     int num_actions_;
 
@@ -45,7 +46,8 @@ struct Node
 
     int get_action(const Environment& env)
     {
-        int best_action(0), best_score(-1), k(0);
+        int best_action(0), k(0);
+        uint64_t best_score = 0;
         for(auto c: child_nodes)
         {
             if (c != nullptr)
@@ -58,7 +60,18 @@ struct Node
             }
             k++;
         }
-        return best_action;
+        while((child_nodes[best_action] == nullptr) && (best_action < num_actions_))
+        {
+            best_action++;
+        }
+        if(best_action >= num_actions_)
+        {
+            return -1;
+        }
+        else
+        {
+            return best_action;
+        }
     }
 
     void zero_snes()
@@ -85,19 +98,5 @@ struct Node
                 child->update_q();
             }
         }
-    }
-
-    Node(const Node& orig)
-    {
-        action_id = orig.action_id;
-        parent = orig.parent;
-        cnt = orig.cnt;
-        w = orig.w;
-        q = orig.q;
-        child_nodes = orig.child_nodes;
-        agent_id = orig.agent_id;
-        cnt_sne = orig.cnt_sne;
-        mask_picked = orig.mask_picked;
-        num_actions_ = orig.num_actions_;
     }
 };

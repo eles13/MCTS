@@ -87,16 +87,21 @@ public:
             for(size_t j = i+1; j < num_agents; j++) {
                 if (reached[i] || reached[j])
                     continue;
-                if ((executed_pos[i].first == executed_pos[j].first &&
-                     executed_pos[i].second == executed_pos[j].second) ||
-                    (executed_pos[i].first == cur_positions[j].first &&
-                     executed_pos[i].second == cur_positions[j].second
-                     && executed_pos[j].first == cur_positions[i].first &&
-                     executed_pos[j].second == cur_positions[i].second))
+                if (executed_pos[i].first == executed_pos[j].first && executed_pos[i].second == executed_pos[j].second)
                 {
                     executed_pos[i] = cur_positions[i];
                     executed_pos[j] = cur_positions[j];
                     actions[i] = 0;
+                    actions[j] = 0;
+                }
+                if(executed_pos[i].first == cur_positions[j].first && executed_pos[i].second == cur_positions[j].second)
+                {
+                    executed_pos[i] = cur_positions[i];
+                    actions[i] = 0;
+                }
+                if(executed_pos[j].first == cur_positions[i].first && executed_pos[j].second == cur_positions[i].second)
+                {
+                    executed_pos[j] = cur_positions[j];
                     actions[j] = 0;
                 }
             }
