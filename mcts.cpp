@@ -405,23 +405,6 @@ std::vector<int> MonteCarloTreeSearch::act()
     return actions;
 }
 
-Node* MonteCarloTreeSearch::make_copy_node(Node* orig)
-{
-    auto n = safe_insert_node(orig->parent, orig->action_id, orig->w, orig->num_actions_, orig->agent_id);
-    n->mask_picked = orig->mask_picked;
-    n->cnt = orig->cnt;
-    n->cnt_sne = orig->cnt_sne;
-    n->q = orig->q;
-    for(size_t i = 0; i < orig->child_nodes.size(); i++)
-    {
-        if(orig->child_nodes[i] != nullptr)
-        {
-            n->child_nodes[i] = make_copy_node(orig->child_nodes[i]);
-        }
-    }
-    return n;
-}
-
 void MonteCarloTreeSearch::set_config(const Config& config)
 {
     cfg = config;
