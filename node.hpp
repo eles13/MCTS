@@ -1,6 +1,5 @@
 #include <list>
 #include <vector>
-#include "environment.cpp"
 
 class Node
 {
@@ -44,7 +43,7 @@ public:
         }
     }
 
-    int get_action(const Environment& env)
+    int get_action()
     {
         int best_action(0), k(0);
         uint64_t best_score = 0;

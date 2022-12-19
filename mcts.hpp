@@ -12,14 +12,18 @@
 #include <chrono>
 #include "config.cpp"
 #include "node.hpp"
+#include "environment.cpp"
 
 class MonteCarloTreeSearch
 {
     Node* root;
     std::list<Node> all_nodes;
+    std::list<Environment> all_envs;
     Config cfg;
     BS::thread_pool pool;
     std::vector<Node*> ptrees;
+    std::vector<Environment> penvs;
+    int num_envs;
 public:
     Environment env;
 
@@ -27,30 +31,30 @@ public:
 
     std::vector<int> act();
 
-    void set_env(Environment& env_);
+    void set_env(Environment env_);
 
     void set_config(const Config& config);
 
 protected:
     Node* safe_insert_node(Node* n, const int action, const double score, const int num_actions, const int next_agent_idx);
 
-    double single_simulation(Environment local_env);
+    double single_simulation(const int process_num);
 
-    double simulation(Environment& local_env);
+    double simulation(const int process_num);
 
     double uct(Node* n) const;
 
     double batch_uct(Node* n) const;
 
-    int expansion(Node* n, const int agent_idx) const;
+    int expansion(Node* n, const int agent_idx, const int process_num) const;
 
-    double selection(Node* n, std::vector<int> actions, Environment& env);
+    double selection(Node* n, std::vector<int> actions, const int process_num);
 
-    int select_action_for_batch_path(Node* n, const int agent_idx);
+    int select_action_for_batch_path(Node* n, const int agent_idx, const int process_num);
 
-    std::vector<int> batch_selection(Node* n, std::vector<int> actions);
+    std::vector<int> batch_selection(Node* n, std::vector<int> actions, const int process_num);
 
-    double batch_expansion(std::vector<int> path_actions, std::vector<int> prev_actions, Environment cpenv);
+    double batch_expansion(std::vector<int> path_actions, std::vector<int> prev_actions, const int process_num);
 
     void loop(std::vector<int>& prev_actions);
 
@@ -58,7 +62,7 @@ protected:
 
     void retrieve_statistics(Node* tree, Node* from_root);
 
-    void tree_parallelization_loop_internal(Node* root, std::vector<int> prev_actions, Environment cpenv);
+    void tree_parallelization_loop_internal(std::vector<int> prev_actions, const int process_num);
 
     void tree_parallelization_loop(std::vector<int>& prev_actions);
 };
