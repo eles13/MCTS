@@ -4,6 +4,8 @@
 #include <pybind11/stl_bind.h>
 #include "BS_thread_pool.hpp"
 #include "mcts.hpp"
+#include <mutex>
+std::mutex insert_mutex;
 namespace py = pybind11;
 
 template<typename T>
@@ -17,23 +19,34 @@ void pop_front(std::vector<T>& vec)
 MonteCarloTreeSearch::MonteCarloTreeSearch()
 {}
 
-double MonteCarloTreeSearch::single_simulation(Environment local_env)
+Node* MonteCarloTreeSearch::safe_insert_node(Node* n, const int action, const double score, const int num_actions, const int next_agent_idx)
 {
-    local_env.reset_seed();
+    const std::lock_guard<std::mutex> lock(insert_mutex);
+    all_nodes.emplace_back(n, action, score, num_actions, next_agent_idx);
+    return &all_nodes.back();
+}
+
+double MonteCarloTreeSearch::single_simulation(const int process_num)
+{
+    penvs[process_num].reset_seed();
     double score(0);
     double g(1), reward(0);
     int num_steps(0);
-    while(!local_env.all_done() && num_steps < cfg.steps_limit)
+    while(!penvs[process_num].all_done() && num_steps < cfg.steps_limit)
     {
-        reward = local_env.step(local_env.sample_actions(cfg.num_actions, cfg.use_move_limits, cfg.agents_as_obstacles));
+        reward = penvs[process_num].step(penvs[process_num].sample_actions(cfg.num_actions, cfg.use_move_limits, cfg.agents_as_obstacles));
         num_steps++;
         score += reward*g;
         g *= cfg.gamma;
     }
+    for (int i = 0; i < num_steps; i++)
+    {
+        penvs[process_num].step_back();
+    }
     return score;
 }
 
-double MonteCarloTreeSearch::simulation(Environment& local_env)
+double MonteCarloTreeSearch::simulation(const int process_num = 0)
 {
     double score(0);
     if (cfg.multi_simulations > 1)
@@ -41,7 +54,7 @@ double MonteCarloTreeSearch::simulation(Environment& local_env)
         std::vector<std::future<double>> futures;
         for(int thread = 0; thread < cfg.multi_simulations; thread++)
         {
-            futures.push_back(pool.submit(&MonteCarloTreeSearch::single_simulation, this, local_env));
+            futures.push_back(pool.submit(&MonteCarloTreeSearch::single_simulation, this, thread));
         }
         for(int thread = 0; thread < cfg.multi_simulations; thread++)
         {
@@ -50,7 +63,7 @@ double MonteCarloTreeSearch::simulation(Environment& local_env)
     }
     else
     {
-        score = single_simulation(local_env);
+        score = single_simulation(process_num);
     }
     const auto result = score/cfg.multi_simulations;
     return result;
@@ -67,13 +80,13 @@ double MonteCarloTreeSearch::batch_uct(Node* n) const
     return n->w/adjusted_count + cfg.uct_c * std::sqrt(2.0 * std::log(n->parent->cnt + n->parent->cnt_sne)/adjusted_count);
 }
 
-int MonteCarloTreeSearch::expansion(Node* n, const int agent_idx) const
+int MonteCarloTreeSearch::expansion(Node* n, const int agent_idx, const int process_num = 0) const
 {
     int best_action(0), k(0);
     double best_score(-1);
     for(auto c: n->child_nodes)
     {
-        if ((cfg.use_move_limits && env.check_action(agent_idx, k, cfg.agents_as_obstacles)) || !cfg.use_move_limits)
+        if ((cfg.use_move_limits && penvs[process_num].check_action(agent_idx, k, cfg.agents_as_obstacles)) || !cfg.use_move_limits)
         {
             if(c == nullptr)
             {
@@ -89,55 +102,53 @@ int MonteCarloTreeSearch::expansion(Node* n, const int agent_idx) const
     return best_action;
 }
 
-double MonteCarloTreeSearch::selection(Node* n, std::vector<int> actions, Environment& env)
+double MonteCarloTreeSearch::selection(Node* n, std::vector<int> actions, const int process_num = 0)
 {
-    int agent_idx = int(actions.size())%env.get_num_agents();
-    int next_agent_idx = (agent_idx + 1)%env.get_num_agents();
+    int agent_idx = int(actions.size())%penvs[process_num].get_num_agents();
+    int next_agent_idx = (agent_idx + 1)%penvs[process_num].get_num_agents();
     int action(0);
     double score;
-    if(!env.reached_goal(agent_idx))
-        action = expansion(n, agent_idx);
-    if(actions.size() == env.get_num_agents())
+    if(!penvs[process_num].reached_goal(agent_idx))
+        action = expansion(n, agent_idx, process_num);
+    if(actions.size() == penvs[process_num].get_num_agents())
     {
-        double reward = env.step(actions);
+        double reward = penvs[process_num].step(actions);
         actions.clear();
-        if(env.all_done())
+        if(penvs[process_num].all_done())
             score = reward;
         else
         {
             if(n->child_nodes[action] == nullptr)
             {
-                score = reward + cfg.gamma*simulation(env);
-                all_nodes.emplace_back(n, action, score, cfg.num_actions, next_agent_idx);
-                n->child_nodes[action] = &all_nodes.back();
+                score = reward + cfg.gamma*simulation(process_num);
+                n->child_nodes[action] = safe_insert_node(n, action, score, cfg.num_actions, next_agent_idx);
             }
             else
-                score = reward +cfg.gamma*selection(n->child_nodes[action], {action}, env);
+                score = reward +cfg.gamma*selection(n->child_nodes[action], {action}, process_num);
         }
         n->update_value(score);
-        env.step_back();
+        penvs[process_num].step_back();
     }
     else
     {
         if(n->child_nodes[action] == nullptr)
         {
-            all_nodes.emplace_back(n, action, 0, cfg.num_actions, next_agent_idx);
-            n->child_nodes[action] = &all_nodes.back();
+            n->child_nodes[action] = safe_insert_node(n, action, 0, cfg.num_actions, next_agent_idx);
         }
         actions.push_back(action);
-        score = selection(n->child_nodes[action], actions, env);
+        score = selection(n->child_nodes[action], actions, process_num);
         n->update_value(score);
     }
     return score*cfg.gamma;
 }
 
-int MonteCarloTreeSearch::select_action_for_batch_path(Node* n, const int agent_idx)
+int MonteCarloTreeSearch::select_action_for_batch_path(Node* n, const int agent_idx, const int process_num = 0)
 {
     int best_action(0), k(0);
     double best_score(-1);
     for(auto c: n->child_nodes)
     {
-        if ((cfg.use_move_limits && env.check_action(agent_idx, k, cfg.agents_as_obstacles)) || !cfg.use_move_limits)
+        if ((cfg.use_move_limits && penvs[process_num].check_action(agent_idx, k, cfg.agents_as_obstacles)) || !cfg.use_move_limits)
         {
             if(c == nullptr && !n->mask_picked[k])
                 return k;
@@ -162,12 +173,12 @@ int MonteCarloTreeSearch::select_action_for_batch_path(Node* n, const int agent_
     return best_action;
 }
 
-std::vector<int> MonteCarloTreeSearch::batch_selection(Node* n, std::vector<int> actions)
+std::vector<int> MonteCarloTreeSearch::batch_selection(Node* n, std::vector<int> actions, const int process_num = 0)
 {
-    int agent_idx = int(actions.size())%env.get_num_agents();
+    int agent_idx = int(actions.size())%penvs[process_num].get_num_agents();
     int action(0);
-    if(!env.reached_goal(agent_idx))
-        action = select_action_for_batch_path(n, agent_idx);
+    if(!penvs[process_num].reached_goal(agent_idx))
+        action = select_action_for_batch_path(n, agent_idx, process_num);
     actions.push_back(action);
     if (action < 0)
     {
@@ -181,19 +192,19 @@ std::vector<int> MonteCarloTreeSearch::batch_selection(Node* n, std::vector<int>
     }
     else
     {
-        auto new_actions = batch_selection(n->child_nodes[action], actions);
+        auto new_actions = batch_selection(n->child_nodes[action], actions, process_num);
         n->cnt_sne += 1;
         return new_actions;
     }
 }
 
-double MonteCarloTreeSearch::batch_expansion(std::vector<int> path_actions, std::vector<int> prev_actions, Environment cpenv)
+double MonteCarloTreeSearch::batch_expansion(std::vector<int> path_actions, std::vector<int> prev_actions, const int process_num = 0)
 {
     double score = 0.0;
     double g = 1.0;
-    if(prev_actions.size() == cpenv.get_num_agents())
+    if(prev_actions.size() == penvs[process_num].get_num_agents())
     {
-        double reward = cpenv.step(prev_actions);
+        double reward = penvs[process_num].step(prev_actions);
         score += g * reward;
         g *= cfg.gamma;
         prev_actions.clear();
@@ -201,17 +212,17 @@ double MonteCarloTreeSearch::batch_expansion(std::vector<int> path_actions, std:
     for (const auto action: path_actions)
     {
         prev_actions.push_back(action);
-        if(prev_actions.size() == cpenv.get_num_agents())
+        if(prev_actions.size() == penvs[process_num].get_num_agents())
         {
-            double reward = cpenv.step(prev_actions);
+            double reward = penvs[process_num].step(prev_actions);
             score += g * reward;
             g *= cfg.gamma;
             prev_actions.clear();
         }
     }
-    if(!env.all_done())
+    if(!penvs[process_num].all_done())
     {
-        score += cfg.gamma * simulation(cpenv);
+        score += cfg.gamma * simulation(process_num);
     }
     return score;
 }
@@ -220,7 +231,7 @@ void MonteCarloTreeSearch::loop(std::vector<int>& prev_actions)
 {
     for (int i = 0; i < cfg.num_expansions; i++)
     {
-        double score = selection(root, prev_actions, this->env);
+        double score = selection(root, prev_actions, 0);
         root->update_value(score);
     }
 }
@@ -234,13 +245,13 @@ void MonteCarloTreeSearch::batch_loop(std::vector<int>& prev_actions)
         std::vector<std::vector<int>> batch_paths;
         for(int batch = 0; batch < cfg.batch_size; batch++)
         {
-            auto batch_actions = batch_selection(root, prev_actions);
+            auto batch_actions = batch_selection(root, prev_actions, batch);
             if (batch_actions[batch_actions.size() - 1] >= 0)
             {
                 for([[maybe_unused]] auto& _ : prev_actions)
                     pop_front(batch_actions);
                 batch_paths.push_back(batch_actions);
-                pool_futures.push_back(pool.submit(&MonteCarloTreeSearch::batch_expansion, this, batch_actions, prev_actions, env));
+                pool_futures.push_back(pool.submit(&MonteCarloTreeSearch::batch_expansion, this, batch_actions, prev_actions, batch));
             }
         }
         for (size_t enum_paths = 0; enum_paths < batch_paths.size(); enum_paths++)
@@ -254,8 +265,7 @@ void MonteCarloTreeSearch::batch_loop(std::vector<int>& prev_actions)
             const auto action = batch_paths[enum_paths][batch_paths[enum_paths].size() - 1];
             if(local_root->child_nodes[action] == nullptr)
             {
-                all_nodes.emplace_back(local_root, action, score, cfg.num_actions, (local_root->agent_id + 1) % env.get_num_agents());
-                local_root->child_nodes[action] = &all_nodes.back();
+                local_root->child_nodes[action] = safe_insert_node(local_root, action, score, cfg.num_actions, (local_root->agent_id + 1) % penvs[0].get_num_agents());
                 local_root->update_value_batch(score);
             }
             else
@@ -277,8 +287,7 @@ void MonteCarloTreeSearch::retrieve_statistics(Node* tree, Node* from_root)
         {
             if(from_root->child_nodes[action] == nullptr)
             {
-                all_nodes.emplace_back(from_root, action, 0, cfg.num_actions, c->agent_id);
-                from_root->child_nodes[action] = &all_nodes.back();
+                from_root->child_nodes[action] = safe_insert_node(from_root, action, 0, cfg.num_actions, c->agent_id);
             }
             retrieve_statistics(c, from_root->child_nodes[action]);
         }
@@ -286,27 +295,27 @@ void MonteCarloTreeSearch::retrieve_statistics(Node* tree, Node* from_root)
     }
 }
 
-Node MonteCarloTreeSearch::tree_parallelization_loop_internal(Node root, std::vector<int> prev_actions, Environment cpenv)
+void MonteCarloTreeSearch::tree_parallelization_loop_internal(std::vector<int> prev_actions, const int process_num)
 {
     for (int i = 0; i < cfg.num_expansions; i++)
     {
-        double score = selection(&root, prev_actions, cpenv);
-        root.update_value(score);
+        double score = selection(ptrees[process_num], prev_actions, process_num);
+        ptrees[process_num]->update_value(score);
     }
-    return root;
 }
 
 void MonteCarloTreeSearch::tree_parallelization_loop(std::vector<int>& prev_actions)
 {
-    std::vector<std::future<Node>> futures;
+    std::vector<std::future<void>> futures;
     for(int i = 0; i < cfg.num_parallel_trees; i++)
     {
-        futures.push_back(pool.submit(&MonteCarloTreeSearch::tree_parallelization_loop_internal, this, *root, prev_actions, env));
+        futures.push_back(pool.submit(&MonteCarloTreeSearch::tree_parallelization_loop_internal, this, prev_actions, i));
     }
-    for(int i = 0; i < cfg.num_parallel_trees; i++)
+    futures[0].get();
+    for(int i = 1; i < cfg.num_parallel_trees; i++)
     {
-        auto tree = futures[i].get();
-        retrieve_statistics(&tree, root);
+        futures[i].get();
+        retrieve_statistics(ptrees[i], root);
     }
     root->update_q();
 }
@@ -314,32 +323,41 @@ void MonteCarloTreeSearch::tree_parallelization_loop(std::vector<int>& prev_acti
 std::vector<int> MonteCarloTreeSearch::act()
 {
     std::vector<int> actions;
-    if (env.all_done())
+    if (penvs[0].all_done())
     {
-        for(size_t agent_idx = 0; agent_idx < env.get_num_agents(); agent_idx++)
+        for(size_t agent_idx = 0; agent_idx < penvs[0].get_num_agents(); agent_idx++)
         {
             actions.push_back(0);
         }
         return actions;
     }
     std::vector<char> action_names = {'S','U', 'D', 'L', 'R'};
-    for(size_t agent_idx = 0; agent_idx < env.get_num_agents(); agent_idx++)
+    for(size_t agent_idx = 0; agent_idx < penvs[0].get_num_agents(); agent_idx++)
     {
-        if (!env.reached_goal(agent_idx))
+        try
         {
-            if (cfg.batch_size > 1)
+            if (!penvs[0].reached_goal(agent_idx))
             {
-                batch_loop(actions);
-            }
-            else if (cfg.num_parallel_trees > 1)
-            {
-                tree_parallelization_loop(actions);
-            }
-            else
-            {
-                loop(actions);
+                if (cfg.batch_size > 1)
+                {
+                    batch_loop(actions);
+                }
+                else if (cfg.num_parallel_trees > 1)
+                {
+                    tree_parallelization_loop(actions);
+                }
+                else
+                {
+                    loop(actions);
+                }
             }
         }
+        catch(const std::exception& e)
+        {
+            std::cerr << e.what() << '\n';
+            std::cout<<"loop\n";
+        }
+
         if (cfg.render)
         {
             std::cout<<agent_idx<<" "<<root->q<<std::endl;
@@ -355,13 +373,26 @@ std::vector<int> MonteCarloTreeSearch::act()
             std::cout<<std::endl;
             std::cout<<"---------------------------------------------------------------------\n";
         }
-        int action = root->get_action(env);
+        int action = root->get_action();
         root = root->child_nodes[action];
-
+        for(int i = 0; i < cfg.num_parallel_trees; i++)
+        {
+            if(ptrees[i]->child_nodes[action] != nullptr)
+            {
+                ptrees[i] = ptrees[i]->child_nodes[action];
+            }
+            else
+            {
+                ptrees[i]->child_nodes[action] = safe_insert_node(ptrees[i], action, 0, cfg.num_actions, (agent_idx + 1) % penvs[i].get_num_agents());
+            }
+        }
         actions.push_back(action);
     }
 
-    env.step(actions);
+    for(int i = 0; i < num_envs; i++)
+    {
+        penvs[i].step(actions);
+    }
     if (cfg.render)
     {
         for(auto a: actions)
@@ -376,11 +407,18 @@ void MonteCarloTreeSearch::set_config(const Config& config)
     cfg = config;
 }
 
-void MonteCarloTreeSearch::set_env(Environment& env_)
+void MonteCarloTreeSearch::set_env(Environment env)
 {
-    env = env_;
-    all_nodes.emplace_back(nullptr, -1, 0, cfg.num_actions, 0);
-    root = &all_nodes.back();
+    for(int i = 0; i < cfg.num_parallel_trees; i++)
+    {
+        ptrees.push_back(safe_insert_node(nullptr, -1, 0, cfg.num_actions, 0));
+    }
+    num_envs = std::max({cfg.num_parallel_trees, cfg.batch_size, cfg.multi_simulations});
+    for(int i = 0; i < num_envs; i++)
+    {
+        penvs.push_back(env);
+    }
+    root = ptrees[0];
 }
 
 PYBIND11_MODULE(mcts, m) {

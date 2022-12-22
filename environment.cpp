@@ -14,13 +14,13 @@ class Environment
 {
     size_t num_agents;
     std::vector<std::pair<int, int>> moves = {{0,0}, {-1, 0}, {1,0},{0,-1},{0,1}};
-    std::vector<std::vector<int>> grid;
-    std::vector<std::pair<int, int>> goals;
-    std::vector<std::pair<int, int>> cur_positions;
     std::vector<std::vector<int>> made_actions;
     std::vector<bool> reached;
     std::default_random_engine engine;
 public:
+    std::vector<std::pair<int, int>> goals;
+    std::vector<std::pair<int, int>> cur_positions;
+    std::vector<std::vector<int>> grid;
     explicit Environment()
     {
         num_agents = 0;

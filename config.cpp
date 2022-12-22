@@ -11,7 +11,7 @@ struct Config
     double uct_c = 1.0;
     int steps_limit = 64;
     int multi_simulations = 1;
-    bool use_move_limits = false;
+    bool use_move_limits = true;
     bool agents_as_obstacles = false;
     int batch_size = 1;
     int num_parallel_trees = 1;
@@ -31,6 +31,7 @@ PYBIND11_MODULE(config, m) {
         .def_readwrite("agents_as_obstacles", &Config::agents_as_obstacles)
         .def_readwrite("batch_size", &Config::batch_size)
         .def_readwrite("num_parallel_trees", &Config::num_parallel_trees)
+        .def_readwrite("render", &Config::render)
         ;
 }
 
