@@ -76,14 +76,14 @@ double MonteCarloTreeSearch::simulation(const int process_num = 0)
 double MonteCarloTreeSearch::uct(Node* n, const int agent_idx, const int process_num) const
 {
     auto uct_val = n->q + cfg.uct_c*std::sqrt(2.0*std::log(n->parent->cnt)/n->cnt);
-    // if (cfg.heuristic_coef > 0)
-    // {
-    //     const auto position = penvs[process_num].cur_positions[agent_idx];
-    //     const auto move = penvs[process_num].moves[n->action_id];
-    //     const int lenpath = shortest_paths[agent_idx][position.first + move.first][position.second + move.second];
-    //     uct_val -= cfg.heuristic_coef * lenpath / n->cnt;
-    //     // std::cout<<n->agent_id<<" "<<position.first<<" "<<position.second<<" "<<move.first<<" "<<move.second<<" "<<shortest_paths[n->agent_id][position.first + move.first][position.second + move.second]<<"\n";
-    // }
+    if (cfg.heuristic_coef > 0)
+    {
+        const auto position = penvs[process_num].cur_positions[agent_idx];
+        const auto move = penvs[process_num].moves[n->action_id];
+        const int lenpath = shortest_paths[agent_idx][position.first + move.first][position.second + move.second];
+        uct_val -= cfg.heuristic_coef * lenpath / n->cnt;
+        // std::cout<<n->agent_id<<" "<<position.first<<" "<<position.second<<" "<<move.first<<" "<<move.second<<" "<<shortest_paths[n->agent_id][position.first + move.first][position.second + move.second]<<"\n";
+    }
     return uct_val;
 }
 
