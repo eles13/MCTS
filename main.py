@@ -25,7 +25,8 @@ def main():
     gc.persistent = True
     gc.collision_system = 'block_both'
     mcts_config = Config()
-    mcts_config.num_parallel_trees = 4
+    mcts_config.num_parallel_trees = 1
+    mcts_config.heuristic_coef = 0.1
     mcts_config.render = False
     mcts = MonteCarloTreeSearch()
     env = pogema_v0(gc)

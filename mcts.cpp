@@ -5,6 +5,10 @@
 #include "BS_thread_pool.hpp"
 #include "mcts.hpp"
 #include <mutex>
+#include <deque>
+#include <utility>
+#include <functional>
+
 std::mutex insert_mutex;
 namespace py = pybind11;
 
@@ -69,9 +73,18 @@ double MonteCarloTreeSearch::simulation(const int process_num = 0)
     return result;
 }
 
-double MonteCarloTreeSearch::uct(Node* n) const
+double MonteCarloTreeSearch::uct(Node* n, const int agent_idx, const int process_num) const
 {
-    return n->q + cfg.uct_c*std::sqrt(2.0*std::log(n->parent->cnt)/n->cnt);
+    auto uct_val = n->q + cfg.uct_c*std::sqrt(2.0*std::log(n->parent->cnt)/n->cnt);
+    // if (cfg.heuristic_coef > 0)
+    // {
+    //     const auto position = penvs[process_num].cur_positions[agent_idx];
+    //     const auto move = penvs[process_num].moves[n->action_id];
+    //     const int lenpath = shortest_paths[agent_idx][position.first + move.first][position.second + move.second];
+    //     uct_val -= cfg.heuristic_coef * lenpath / n->cnt;
+    //     // std::cout<<n->agent_id<<" "<<position.first<<" "<<position.second<<" "<<move.first<<" "<<move.second<<" "<<shortest_paths[n->agent_id][position.first + move.first][position.second + move.second]<<"\n";
+    // }
+    return uct_val;
 }
 
 double MonteCarloTreeSearch::batch_uct(Node* n) const
@@ -92,9 +105,9 @@ int MonteCarloTreeSearch::expansion(Node* n, const int agent_idx, const int proc
             {
                 return k;
             }
-            if (uct(c) > best_score) {
+            if (uct(c, agent_idx, process_num) > best_score) {
                 best_action = k;
-                best_score = uct(c);
+                best_score = uct(c, agent_idx, process_num);
             }
         }
         k++;
@@ -367,7 +380,7 @@ std::vector<int> MonteCarloTreeSearch::act()
             }
             std::cout<<std::endl;
             for(int i = 0; i < cfg.num_actions; i++) {
-                double c = (root->child_nodes[i] == nullptr) ? 0.0 : uct(root->child_nodes[i]);
+                double c = (root->child_nodes[i] == nullptr) ? 0.0 : uct(root->child_nodes[i], agent_idx, 0);
                 std::cout << action_names[i] << ":" << c << " ";
             }
             std::cout<<std::endl;
@@ -419,6 +432,55 @@ void MonteCarloTreeSearch::set_env(Environment env)
         penvs.push_back(env);
     }
     root = ptrees[0];
+    if (cfg.heuristic_coef > 0)
+    {
+        shortest_paths = bfs(env);
+    }
+}
+
+std::vector<std::vector<std::vector<int>>> MonteCarloTreeSearch::bfs(Environment& env)
+{
+    auto obstacles = env.grid;
+
+    std::vector<std::vector<std::vector<int>>> agents_map;
+    agents_map.reserve(env.num_agents);
+
+    for(size_t i = 0; i < env.num_agents; i++)
+    {
+        auto filled = obstacles;
+        for(size_t j = 0; j < filled.size(); j++)
+        {
+            for(size_t k = 0; k < filled[0].size(); k++)
+            {
+                if(filled[j][k] >= 0)
+                {
+                    filled[j][k] = 1000000;
+                }
+            }
+        }
+        filled[env.goals[i].first][env.goals[i].second] = 0;
+        std::deque<std::pair<int, int>> q;
+        q.push_back(env.goals[i]);
+        while (q.size() > 0)
+        {
+            auto pos = q.front();
+            q.pop_front();
+            for(const auto& move: env.moves)
+            {
+                if ((pos.first + move.first >= 0) && (static_cast<size_t>(pos.first + move.first) < filled.size())\
+                         && (pos.second + move.second >= 0) && (static_cast<size_t>(pos.second + move.second) < filled[0].size()))
+                {
+                    if ((filled[pos.first + move.first][pos.second + move.second] == 1000000) && env.grid[pos.first + move.first][pos.second + move.second] != 1)
+                    {
+                        q.push_back(std::make_pair(pos.first + move.first, pos.second + move.second));
+                        filled[pos.first + move.first][pos.second + move.second] = filled[pos.first][pos.second] + 1;
+                    }
+                }
+            }
+        }
+        agents_map.push_back(filled);
+    }
+    return agents_map;
 }
 
 PYBIND11_MODULE(mcts, m) {
