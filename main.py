@@ -19,14 +19,14 @@ def main():
     gc = GridConfig(size=6, num_agents=5, seed=62, density=0.1, max_episode_steps=32)
     #for seed in range(1000):
 
-    gc = GridConfig(size=16, num_agents=16, seed=62, density=0.3, obs_radius=5, max_episode_steps=32)
+    gc = GridConfig(size=16, num_agents=16, seed=207, density=0.3, obs_radius=5, max_episode_steps=32)
     # gc = GridConfig(map=""".BabA""", obs_radius=2, max_episode_steps=12)
     #gc = GridConfig(size=8, num_agents=3, seed=1, density=0.2, obs_radius=5, max_episode_steps=64)
     gc.persistent = True
     gc.collision_system = 'block_both'
     mcts_config = Config()
     mcts_config.num_parallel_trees = 1
-    mcts_config.heuristic_coef = 0.1
+    mcts_config.heuristic_coef = 0.5
     mcts_config.render = False
     mcts = MonteCarloTreeSearch()
     env = pogema_v0(gc)
