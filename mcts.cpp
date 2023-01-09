@@ -104,7 +104,7 @@ int MonteCarloTreeSearch::expansion(Node* n, const int agent_idx, const int proc
             {
                 return k;
             }
-            const auto uct_val = uct(c, agent_idx, process_num)
+            const auto uct_val = uct(c, agent_idx, process_num);
             if (uct_val > best_score)
             {
                 best_action = k;
