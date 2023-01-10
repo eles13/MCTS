@@ -25,7 +25,7 @@ class MonteCarloTreeSearch
     std::vector<Node*> ptrees;
     std::vector<Environment> penvs;
     int num_envs;
-    std::vector<std::vector<std::vector<int>>> shortest_paths;
+    std::vector<std::vector<std::vector<double>>> shortest_paths;
 public:
     Environment env;
 
@@ -68,5 +68,5 @@ protected:
 
     void tree_parallelization_loop(std::vector<int>& prev_actions);
 
-    std::vector<std::vector<std::vector<int>>> bfs(Environment& env);
+    std::vector<std::vector<std::vector<double>>> bfs(Environment& env);
 };

@@ -95,7 +95,7 @@ double MonteCarloTreeSearch::batch_uct(Node* n) const
 int MonteCarloTreeSearch::expansion(Node* n, const int agent_idx, const int process_num = 0) const
 {
     int best_action(0), k(0);
-    double best_score(-1);
+    double best_score(-1000000);
     for(auto c: n->child_nodes)
     {
         if ((cfg.use_move_limits && penvs[process_num].check_action(agent_idx, k, cfg.agents_as_obstacles)) || !cfg.use_move_limits)
@@ -439,29 +439,30 @@ void MonteCarloTreeSearch::set_env(Environment env)
     }
 }
 
-std::vector<std::vector<std::vector<int>>> MonteCarloTreeSearch::bfs(Environment& env)
+std::vector<std::vector<std::vector<double>>> MonteCarloTreeSearch::bfs(Environment& env)
 {
     auto obstacles = env.grid;
 
-    std::vector<std::vector<std::vector<int>>> agents_map;
+    std::vector<std::vector<std::vector<double>>> agents_map(env.num_agents, std::vector(obstacles.size(), std::vector<double>(obstacles.size())));
     agents_map.reserve(env.num_agents);
 
     for(size_t i = 0; i < env.num_agents; i++)
     {
-        auto filled = obstacles;
+        std::vector<std::vector<double>> filled(obstacles.size(), std::vector<double>(obstacles.size()));
         for(size_t j = 0; j < filled.size(); j++)
         {
             for(size_t k = 0; k < filled[0].size(); k++)
             {
-                if(filled[j][k] >= 0)
+                if(obstacles[j][k] >= 0)
                 {
-                    filled[j][k] = 1000000;
+                    filled[j].push_back(1000000);
                 }
             }
         }
         filled[env.goals[i].first][env.goals[i].second] = 0;
         std::deque<std::pair<int, int>> q;
         q.push_back(env.goals[i]);
+        double max_dist = 0;
         while (q.size() > 0)
         {
             auto pos = q.front();
@@ -475,10 +476,21 @@ std::vector<std::vector<std::vector<int>>> MonteCarloTreeSearch::bfs(Environment
                     {
                         q.push_back(std::make_pair(pos.first + move.first, pos.second + move.second));
                         filled[pos.first + move.first][pos.second + move.second] = filled[pos.first][pos.second] + 1;
+                        if (filled[pos.first + move.first][pos.second + move.second] > max_dist)
+                        {
+                            max_dist = filled[pos.first + move.first][pos.second + move.second];
+                        }
                     }
                 }
             }
         }
+        // for(size_t j = 0; j < filled.size(); j++)
+        // {
+        //     for(size_t k = 0; k < filled[0].size(); k++)
+        //     {
+        //         filled[j][k] /= max_dist;
+        //     }
+        // }
         agents_map.push_back(filled);
     }
     return agents_map;
