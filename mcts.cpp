@@ -462,7 +462,7 @@ std::vector<std::vector<std::vector<double>>> MonteCarloTreeSearch::bfs(Environm
         filled[env.goals[i].first][env.goals[i].second] = 0;
         std::deque<std::pair<int, int>> q;
         q.push_back(env.goals[i]);
-        double max_dist = 0;
+        double max_dist = 1;
         while (q.size() > 0)
         {
             auto pos = q.front();
@@ -484,13 +484,13 @@ std::vector<std::vector<std::vector<double>>> MonteCarloTreeSearch::bfs(Environm
                 }
             }
         }
-        // for(size_t j = 0; j < filled.size(); j++)
-        // {
-        //     for(size_t k = 0; k < filled[0].size(); k++)
-        //     {
-        //         filled[j][k] /= max_dist;
-        //     }
-        // }
+        for(size_t j = 0; j < filled.size(); j++)
+        {
+            for(size_t k = 0; k < filled[0].size(); k++)
+            {
+                filled[j][k] /= max_dist;
+            }
+        }
         agents_map.push_back(filled);
     }
     return agents_map;

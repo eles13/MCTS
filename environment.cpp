@@ -62,7 +62,7 @@ public:
         grid[i][j] = OBSTACLE;
     }
 
-    bool reached_goal(size_t i)
+    bool reached_goal(size_t i) const
     {
         if(i >= 0 && i < num_agents)
             return reached[i];
