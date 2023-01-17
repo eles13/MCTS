@@ -174,4 +174,3 @@ PYBIND11_MODULE(planner, m) {
 <%
 setup_pybind11(cfg)
 %>
-*/
