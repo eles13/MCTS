@@ -32,6 +32,8 @@ def main():
     mcts_config.num_parallel_trees = 1
     mcts_config.heuristic_coef = 0
     mcts_config.render = False
+    mcts_config.simulation_type = "replan"
+    mcts_config.num_expansions = 100
     mcts = MonteCarloTreeSearch()
     env = pogema_v0(gc)
     env = CSRMetric(env)
@@ -53,12 +55,12 @@ def main():
         for j in range(len(env.grid.obstacles[0])):
             if env.grid.obstacles[i][j]:
                 cpp_env.add_obstacle(i, j)
-    mcts.set_env(cpp_env)
+    mcts.set_env(cpp_env, gc.obs_radius)
     replan.set_env(cpp_env)
     done = [False]
     start = time()
     while not all(done):
-        actions = replan.act()
+        actions = mcts.act()
         obs, rew, done, info = env.step(actions)
         env.render()
     end = time() - start

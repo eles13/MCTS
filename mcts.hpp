@@ -13,7 +13,7 @@
 #include <unordered_map>
 #include "config.cpp"
 #include "node.hpp"
-#include "environment.cpp"
+#include "replan.cpp"
 
 class MonteCarloTreeSearch
 {
@@ -26,6 +26,7 @@ class MonteCarloTreeSearch
     std::vector<Environment> penvs;
     int num_envs;
     std::vector<std::vector<std::vector<double>>> shortest_paths;
+    int obs_radius;
 public:
     Environment env;
 
@@ -33,7 +34,7 @@ public:
 
     std::vector<int> act();
 
-    void set_env(Environment env_);
+    void set_env(Environment env_, const int obs_radius_);
 
     void set_config(const Config& config);
 

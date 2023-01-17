@@ -8,6 +8,7 @@
 #include <deque>
 #include <utility>
 #include <functional>
+#include <chrono>
 
 std::mutex insert_mutex;
 namespace py = pybind11;
@@ -32,13 +33,31 @@ Node* MonteCarloTreeSearch::safe_insert_node(Node* n, const int action, const do
 
 double MonteCarloTreeSearch::single_simulation(const int process_num)
 {
+    // std::chrono::steady_clock::time_point begin = // std::chrono::steady_clock::now();
     penvs[process_num].reset_seed();
     double score(0);
     double g(1), reward(0);
     int num_steps(0);
+    RePlan replan;
+    if (cfg.simulation_type == "replan")
+    {
+        replan = RePlan();
+        replan.init(penvs[process_num].get_num_agents(), obs_radius, true, 0.2, true, 10000000, -1, false);
+        replan.set_env(penvs[process_num]);
+    }
     while(!penvs[process_num].all_done() && num_steps < cfg.steps_limit)
     {
-        reward = penvs[process_num].step(penvs[process_num].sample_actions(cfg.num_actions, cfg.use_move_limits, cfg.agents_as_obstacles));
+        std::vector<int> actions_tbd;
+        actions_tbd.reserve(penvs[process_num].get_num_agents());
+        if (cfg.simulation_type == "replan")
+        {
+            actions_tbd = replan.act();
+        }
+        else
+        {
+            actions_tbd = penvs[process_num].sample_actions(cfg.num_actions, cfg.use_move_limits, cfg.agents_as_obstacles);
+        }
+        reward = penvs[process_num].step(actions_tbd);
         num_steps++;
         score += reward*g;
         g *= cfg.gamma;
@@ -47,6 +66,8 @@ double MonteCarloTreeSearch::single_simulation(const int process_num)
     {
         penvs[process_num].step_back();
     }
+    // std::chrono::steady_clock::time_point end = // std::chrono::steady_clock::now();
+    // std::cout << "simulation = " << // std::chrono::duration_cast<// std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
     return score;
 }
 
@@ -80,8 +101,8 @@ double MonteCarloTreeSearch::uct(Node* n, const int agent_idx, const int process
     {
         const auto position = penvs[process_num].cur_positions[agent_idx];
         const auto move = penvs[process_num].moves[n->action_id];
-        const int lenpath = shortest_paths[agent_idx][position.first + move.first][position.second + move.second];
-        uct_val -= cfg.heuristic_coef * lenpath / n->cnt;
+        const int lenpath = shortest_paths[agent_idx][position.first][position.second] - shortest_paths[agent_idx][position.first + move.first][position.second + move.second];
+        uct_val += cfg.heuristic_coef * lenpath / n->cnt;
     }
     return uct_val;
 }
@@ -123,7 +144,9 @@ double MonteCarloTreeSearch::selection(Node* n, std::vector<int> actions, const 
     int action(0);
     double score;
     if(!penvs[process_num].reached_goal(agent_idx))
+    {
         action = expansion(n, agent_idx, process_num);
+    }
     if(actions.size() == penvs[process_num].get_num_agents())
     {
         double reward = penvs[process_num].step(actions);
@@ -421,7 +444,7 @@ void MonteCarloTreeSearch::set_config(const Config& config)
     cfg = config;
 }
 
-void MonteCarloTreeSearch::set_env(Environment env)
+void MonteCarloTreeSearch::set_env(Environment env, const int obs_radius_)
 {
     for(int i = 0; i < cfg.num_parallel_trees; i++)
     {
@@ -437,6 +460,7 @@ void MonteCarloTreeSearch::set_env(Environment env)
     {
         shortest_paths = bfs(env);
     }
+    obs_radius = obs_radius_;
 }
 
 std::vector<std::vector<std::vector<double>>> MonteCarloTreeSearch::bfs(Environment& env)
@@ -462,7 +486,6 @@ std::vector<std::vector<std::vector<double>>> MonteCarloTreeSearch::bfs(Environm
         filled[env.goals[i].first][env.goals[i].second] = 0;
         std::deque<std::pair<int, int>> q;
         q.push_back(env.goals[i]);
-        double max_dist = 1;
         while (q.size() > 0)
         {
             auto pos = q.front();
@@ -476,19 +499,8 @@ std::vector<std::vector<std::vector<double>>> MonteCarloTreeSearch::bfs(Environm
                     {
                         q.push_back(std::make_pair(pos.first + move.first, pos.second + move.second));
                         filled[pos.first + move.first][pos.second + move.second] = filled[pos.first][pos.second] + 1;
-                        if (filled[pos.first + move.first][pos.second + move.second] > max_dist)
-                        {
-                            max_dist = filled[pos.first + move.first][pos.second + move.second];
-                        }
                     }
                 }
-            }
-        }
-        for(size_t j = 0; j < filled.size(); j++)
-        {
-            for(size_t k = 0; k < filled[0].size(); k++)
-            {
-                filled[j][k] /= max_dist;
             }
         }
         agents_map.push_back(filled);

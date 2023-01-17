@@ -11,28 +11,28 @@
 #define INF 1000000000
 namespace py = pybind11;
 
-struct Node {
-    Node(int _i = INF, int _j = INF, int _g = 0, int _h = 0) : i(_i), j(_j), g(_g), h(_h), f(_g+_h){}
+struct PlannerNode {
+    PlannerNode(int _i = INF, int _j = INF, int _g = 0, int _h = 0) : i(_i), j(_j), g(_g), h(_h), f(_g+_h){}
     int i;
     int j;
     int g;
     int h;
     int f;
-    bool operator<(const Node& other) const
+    bool operator<(const PlannerNode& other) const
     {
         return this->f < other.f or
                (this->f == other.f and (this->g < other.g or
                                        (this->g == other.g and (this->i < other.i or
                                                                (this->i == other.i and this->j < other.j)))));
     }
-    bool operator>(const Node& other) const
+    bool operator>(const PlannerNode& other) const
     {
         return this->f > other.f or
                (this->f == other.f and (this->g > other.g or
                                        (this->g == other.g and (this->i > other.i or
                                                                (this->i == other.i and this->j > other.j)))));
     }
-    bool operator==(const Node& other) const
+    bool operator==(const PlannerNode& other) const
     {
         return this->i == other.i and this->j == other.j;
     }
@@ -46,12 +46,12 @@ class planner {
     std::set<std::pair<int,int>> obstacles;
     std::set<std::pair<int,int>> other_agents;
     std::set<std::pair<int,int>> bad_actions;
-    std::priority_queue<Node, std::vector<Node>, std::greater<Node>> OPEN;
+    std::priority_queue<PlannerNode, std::vector<PlannerNode>, std::greater<PlannerNode>> OPEN;
     std::map<std::pair<int, int>, std::pair<int, int>> CLOSED;
     std::pair<int, int> start;
     std::pair<int, int> desired_position;
     std::pair<int, int> goal;
-    Node best_node;
+    PlannerNode best_node;
     int max_steps;
     inline int h(std::pair<int, int> n)
     {
@@ -71,7 +71,7 @@ class planner {
     }
     void compute_shortest_path()
     {
-        Node current;
+        PlannerNode current;
         int steps = 0;
         while(!OPEN.empty() and steps < max_steps and !(current == goal))
         {
@@ -82,7 +82,7 @@ class planner {
             steps++;
             for(auto n: get_neighbors({current.i, current.j})) {
                 if (CLOSED.find(n) == CLOSED.end() and other_agents.find(n) == other_agents.end()) {
-                    OPEN.push(Node(n.first, n.second, current.g + 1, h(n)));
+                    OPEN.push(PlannerNode(n.first, n.second, current.g + 1, h(n)));
                     CLOSED[n] = {current.i, current.j};
                 }
             }
@@ -91,8 +91,8 @@ class planner {
     void reset()
     {
         CLOSED.clear();
-        OPEN = std::priority_queue<Node, std::vector<Node>, std::greater<Node>>();
-        Node s = Node(start.first, start.second, 0, h(start));
+        OPEN = std::priority_queue<PlannerNode, std::vector<PlannerNode>, std::greater<PlannerNode>>();
+        PlannerNode s = PlannerNode(start.first, start.second, 0, h(start));
         OPEN.push(s);
         best_node = s;
     }
