@@ -22,7 +22,7 @@ void pop_front(std::vector<T>& vec)
 
 
 MonteCarloTreeSearch::MonteCarloTreeSearch()
-{}
+{depth=0;}
 
 Node* MonteCarloTreeSearch::safe_insert_node(Node* n, const int action, const double score, const int num_actions, const int next_agent_idx)
 {
@@ -411,6 +411,16 @@ std::vector<int> MonteCarloTreeSearch::act()
             std::cout<<"---------------------------------------------------------------------\n";
         }
         int action = root->get_action();
+        if (cfg.retrieve_depth_statisticts)
+        {
+            DepthStatsHandler local_stats;
+            local_stats.agent_id = root->agent_id;
+            local_stats.cnt = root->cnt;
+            local_stats.q = root->q;
+            local_stats.action = action;
+            local_stats.depth = depth;
+            stats.push_back(local_stats);
+        }
         root = root->child_nodes[action];
         for(int i = 0; i < cfg.num_parallel_trees; i++)
         {
@@ -424,8 +434,8 @@ std::vector<int> MonteCarloTreeSearch::act()
             }
         }
         actions.push_back(action);
+        depth++;
     }
-
     for(int i = 0; i < num_envs; i++)
     {
         penvs[i].step(actions);
@@ -514,6 +524,15 @@ PYBIND11_MODULE(mcts, m) {
             .def("act", &MonteCarloTreeSearch::act)
             .def("set_config", &MonteCarloTreeSearch::set_config)
             .def("set_env", &MonteCarloTreeSearch::set_env)
+            .def_readwrite("stats", &MonteCarloTreeSearch::stats)
+            ;
+    py::class_<DepthStatsHandler>(m, "DepthStatsHandler")
+            .def(py::init<>())
+            .def_readwrite("agent_id", &DepthStatsHandler::agent_id)
+            .def_readwrite("cnt", &DepthStatsHandler::cnt)
+            .def_readwrite("q", &DepthStatsHandler::q)
+            .def_readwrite("action", &DepthStatsHandler::action)
+            .def_readwrite("depth", &DepthStatsHandler::depth)
             ;
 }
 

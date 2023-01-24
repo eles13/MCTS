@@ -1,7 +1,3 @@
-#ifdef __APPLE__
-#else
-    #include "omp.h"
-#endif
 #include "BS_thread_pool.hpp"
 #include <iostream>
 #include <list>
@@ -15,6 +11,16 @@
 #include "node.hpp"
 #include "replan.cpp"
 
+class DepthStatsHandler
+{
+    public:
+    int agent_id;
+    int cnt;
+    double q;
+    int action;
+    int depth;
+};
+
 class MonteCarloTreeSearch
 {
     Node* root;
@@ -27,6 +33,7 @@ class MonteCarloTreeSearch
     int num_envs;
     std::vector<std::vector<std::vector<double>>> shortest_paths;
     int obs_radius;
+
 public:
     Environment env;
 
@@ -37,6 +44,10 @@ public:
     void set_env(Environment env_, const int obs_radius_);
 
     void set_config(const Config& config);
+
+    std::vector<DepthStatsHandler> stats;
+
+    int depth;
 
 protected:
     Node* safe_insert_node(Node* n, const int action, const double score, const int num_actions, const int next_agent_idx);

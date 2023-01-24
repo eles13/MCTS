@@ -32,8 +32,9 @@ def main():
     mcts_config.num_parallel_trees = 1
     mcts_config.heuristic_coef = 0
     mcts_config.render = False
-    mcts_config.simulation_type = "replan"
-    mcts_config.num_expansions = 100
+    mcts_config.simulation_type = "random"
+    mcts_config.num_expansions = 1000
+    mcts_config.retrieve_depth_statisticts = True
     mcts = MonteCarloTreeSearch()
     env = pogema_v0(gc)
     env = CSRMetric(env)
@@ -67,6 +68,7 @@ def main():
     results.append(info[0]['metrics'])
     results[-1]['FPS'] = 32/end
     results[-1]['heuristic_coef'] = 0
+    print([{'agent_id': x.agent_id, 'cnt': x.cnt, 'q': x.q, 'action': x.action, 'depth': x.depth} for x in mcts.stats])
     # print(pd.DataFrame(results).groupby('heuristic_coef').mean().applymap(lambda x: "{:.2f}".format(x)) + \
     #       '(±' + pd.DataFrame(results).groupby('heuristic_coef').std().applymap(lambda x: "{:.4f}".format(x)) + ')')
 if __name__ == '__main__':
