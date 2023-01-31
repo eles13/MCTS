@@ -33,6 +33,7 @@ class MonteCarloTreeSearch
     int num_envs;
     std::vector<std::vector<std::vector<double>>> shortest_paths;
     int obs_radius;
+    bool first_move = true;
 
 public:
     Environment env;
@@ -46,6 +47,7 @@ public:
     void set_config(const Config& config);
 
     std::vector<DepthStatsHandler> stats;
+    std::vector<DepthStatsHandler> fmstats;
 
     int depth;
 
@@ -81,4 +83,6 @@ protected:
     void tree_parallelization_loop(std::vector<int>& prev_actions);
 
     std::vector<std::vector<std::vector<double>>> bfs(Environment& env);
+
+    std::vector<DepthStatsHandler> get_path(Node* n, const int process_num, int rec_depth);
 };

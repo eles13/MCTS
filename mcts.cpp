@@ -39,7 +39,7 @@ double MonteCarloTreeSearch::single_simulation(const int process_num)
     double g(1), reward(0);
     int num_steps(0);
     RePlan replan;
-    if (cfg.simulation_type == "replan")
+    if (cfg.use_replansim)
     {
         replan = RePlan();
         replan.init(penvs[process_num].get_num_agents(), obs_radius, true, 0.2, true, 10000000, -1, false);
@@ -49,7 +49,7 @@ double MonteCarloTreeSearch::single_simulation(const int process_num)
     {
         std::vector<int> actions_tbd;
         actions_tbd.reserve(penvs[process_num].get_num_agents());
-        if (cfg.simulation_type == "replan")
+        if (cfg.use_replansim)
         {
             actions_tbd = replan.act();
         }
@@ -150,6 +150,7 @@ double MonteCarloTreeSearch::selection(Node* n, std::vector<int> actions, const 
     if(actions.size() == penvs[process_num].get_num_agents())
     {
         double reward = penvs[process_num].step(actions);
+        n->num_succeeded = penvs[process_num].get_num_done();
         actions.clear();
         if(penvs[process_num].all_done())
             score = reward;
@@ -421,6 +422,11 @@ std::vector<int> MonteCarloTreeSearch::act()
             local_stats.depth = depth;
             stats.push_back(local_stats);
         }
+        if (first_move)
+        {
+            first_move = false;
+            fmstats = get_path(root, 0, 0);
+        }
         root = root->child_nodes[action];
         for(int i = 0; i < cfg.num_parallel_trees; i++)
         {
@@ -447,6 +453,47 @@ std::vector<int> MonteCarloTreeSearch::act()
         std::cout<<" actions\n";
     }
     return actions;
+}
+
+std::vector<DepthStatsHandler> MonteCarloTreeSearch::get_path(Node* n, const int process_num, int rec_depth)
+{
+    std::vector<DepthStatsHandler> local;
+    if (n->num_succeeded == penvs[process_num].get_num_agents())
+    {
+        DepthStatsHandler local_stats;
+        local_stats.agent_id = n->agent_id;
+        local_stats.cnt = n->cnt;
+        local_stats.q = n->q;
+        local_stats.action = n->action_id;
+        local_stats.depth = rec_depth;
+        local.push_back(local_stats);
+        std::cout<<rec_depth<<"\n";
+        return local;
+    }
+    std::vector<DepthStatsHandler> child_results;
+    bool ok = false;
+    for (const auto child: n->child_nodes)
+    {
+        if (child != nullptr)
+        {
+            auto result = get_path(child, process_num, rec_depth + 1);
+            ok = ok | (result.size() > 0);
+            child_results.insert( child_results.end(), result.begin(), result.end() );
+        }
+    }
+    if (ok)
+    {
+        DepthStatsHandler local_stats;
+        local_stats.agent_id = n->agent_id;
+        local_stats.cnt = n->cnt;
+        local_stats.q = n->q;
+        local_stats.action = n->action_id;
+        local_stats.depth = rec_depth;
+        local.push_back(local_stats);
+        std::cout<<rec_depth<<" out\n";
+        local.insert( local.end(), child_results.begin(), child_results.end() );
+    }
+    return local;
 }
 
 void MonteCarloTreeSearch::set_config(const Config& config)
@@ -525,6 +572,7 @@ PYBIND11_MODULE(mcts, m) {
             .def("set_config", &MonteCarloTreeSearch::set_config)
             .def("set_env", &MonteCarloTreeSearch::set_env)
             .def_readwrite("stats", &MonteCarloTreeSearch::stats)
+            .def_readwrite("fmstats", &MonteCarloTreeSearch::fmstats)
             ;
     py::class_<DepthStatsHandler>(m, "DepthStatsHandler")
             .def(py::init<>())

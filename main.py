@@ -18,13 +18,13 @@ def main():
     #gc = GridConfig(size=4, num_agents=2, seed=62, density=0.4, obs_radius=5, max_episode_steps=32)
     #gc = GridConfig(size=4, num_agents=3, seed=42, density=0.3, obs_radius=2, max_episode_steps=32)
     #gc = GridConfig(size=4, num_agents=3, seed=42, density=0.0, obs_radius=2, max_episode_steps=32)
-    gc = GridConfig(size=6, num_agents=5, seed=62, density=0.1, max_episode_steps=32)
+    #gc = GridConfig(size=6, num_agents=5, seed=62, density=0.1, max_episode_steps=32)
     results = []
     # for heuristics in tqdm([0.5, 2]):
     #     #for seed in tqdm([207,522,503,511,116,504,770,694,977,710 ,513,411,381,280,333,774,60,449,728,673,512,249,173,658,656,356,753,217]):
     #     for seed in tqdm([0,1,2,3,4,5]):
     #gc = GridConfig(size=16, num_agents=16, seed=1, density=0.3, obs_radius=5, max_episode_steps=32)
-    #gc = GridConfig(map=""".BabA""", obs_radius=5, max_episode_steps=12)
+    gc = GridConfig(map=""".BabA""", obs_radius=5, max_episode_steps=12)
     #gc = GridConfig(size=8, num_agents=3, seed=1, density=0.2, obs_radius=5, max_episode_steps=64)
     gc.persistent = True
     gc.collision_system = 'block_both'
@@ -32,9 +32,9 @@ def main():
     mcts_config.num_parallel_trees = 1
     mcts_config.heuristic_coef = 0
     mcts_config.render = False
-    mcts_config.simulation_type = "random"
-    mcts_config.num_expansions = 1000
-    mcts_config.retrieve_depth_statisticts = True
+    mcts_config.use_replansim = False
+    mcts_config.num_expansions = 10000
+    mcts_config.first_step_stats = True
     mcts = MonteCarloTreeSearch()
     env = pogema_v0(gc)
     env = CSRMetric(env)
@@ -68,7 +68,7 @@ def main():
     results.append(info[0]['metrics'])
     results[-1]['FPS'] = 32/end
     results[-1]['heuristic_coef'] = 0
-    print([{'agent_id': x.agent_id, 'cnt': x.cnt, 'q': x.q, 'action': x.action, 'depth': x.depth} for x in mcts.stats])
+    print([{'agent_id': x.agent_id, 'cnt': x.cnt, 'q': x.q, 'action': x.action, 'depth': x.depth} for x in mcts.fmstats])
     # print(pd.DataFrame(results).groupby('heuristic_coef').mean().applymap(lambda x: "{:.2f}".format(x)) + \
     #       '(±' + pd.DataFrame(results).groupby('heuristic_coef').std().applymap(lambda x: "{:.4f}".format(x)) + ')')
 if __name__ == '__main__':

@@ -70,6 +70,11 @@ public:
             return false;
     }
 
+    int get_num_done()
+    {
+        return std::accumulate(reached.begin(), reached.end(), 0);
+    }
+
     double step(std::vector<int> actions)
     {
         std::vector<std::pair<int, int>> executed_pos;

@@ -18,8 +18,9 @@ struct Config
     int num_parallel_trees = 1;
     bool render = true;
     double heuristic_coef = 0;
-    std::string simulation_type = "random";
+    bool use_replansim = false;
     bool retrieve_depth_statisticts = false;
+    bool first_step_stats = false;
 };
 
 PYBIND11_MODULE(config, m) {
@@ -39,6 +40,7 @@ PYBIND11_MODULE(config, m) {
         .def_readwrite("heuristic_coef", &Config::heuristic_coef)
         .def_readwrite("simulation_type", &Config::simulation_type)
         .def_readwrite("retrieve_depth_statisticts", &Config::retrieve_depth_statisticts)
+        .def_readwrite("first_step_stats", &Config::first_step_stats)
         ;
 }
 

@@ -14,9 +14,10 @@ public:
     uint64_t cnt_sne;
     std::vector<bool> mask_picked;
     int num_actions_;
+    size_t num_succeeded;
 
     Node(Node* _parent, int _action_id, double _w, int num_actions, int _agent_id=-1)
-            : action_id(_action_id), parent(_parent), w(_w), agent_id(_agent_id)
+            : action_id(_action_id), parent(_parent), w(_w), agent_id(_agent_id), num_succeeded(0)
     {
         cnt = 1;
         q = w;
