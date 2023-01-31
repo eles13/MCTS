@@ -38,7 +38,7 @@ PYBIND11_MODULE(config, m) {
         .def_readwrite("num_parallel_trees", &Config::num_parallel_trees)
         .def_readwrite("render", &Config::render)
         .def_readwrite("heuristic_coef", &Config::heuristic_coef)
-        .def_readwrite("simulation_type", &Config::simulation_type)
+        .def_readwrite("use_replansim", &Config::use_replansim)
         .def_readwrite("retrieve_depth_statisticts", &Config::retrieve_depth_statisticts)
         .def_readwrite("first_step_stats", &Config::first_step_stats)
         ;
